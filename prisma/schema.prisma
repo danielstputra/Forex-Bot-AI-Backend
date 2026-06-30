@@ -734,6 +734,11 @@ model AppConfig {
   midtransServerKey    String   @default("SB-Mid-server-dnX0h4Vb3R4uWq7fP0l4t7e8")
   xenditApiKey         String   @default("")
 
+  // Detail Bank Transfer Manual
+  bankName            String   @default("BCA (Bank Central Asia)")
+  bankAccountNumber   String   @default("8021308212")
+  bankRecipientName   String   @default("PT Forex Bot AI Global")
+
   updatedAt           DateTime @updatedAt
 }
 

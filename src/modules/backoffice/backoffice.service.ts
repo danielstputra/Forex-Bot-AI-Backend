@@ -302,7 +302,8 @@ export class BackofficeService {
       maintenanceMode, globalMinDeposit, globalCommissionPct, activeMenus,
       loginOtpEnabled, smtpEnabled, oauthEnabled,
       smtpHost, smtpPort, smtpUser, smtpPass, smtpSender, googleClientId,
-      activePaymentGateway, midtransServerKey, xenditApiKey
+      activePaymentGateway, midtransServerKey, xenditApiKey,
+      bankName, bankAccountNumber, bankRecipientName
     } = body;
 
     return this.prisma.appConfig.update({
@@ -335,7 +336,11 @@ export class BackofficeService {
         
         activePaymentGateway: activePaymentGateway !== undefined ? activePaymentGateway : undefined,
         midtransServerKey: midtransServerKey !== undefined ? midtransServerKey : undefined,
-        xenditApiKey: xenditApiKey !== undefined ? xenditApiKey : undefined
+        xenditApiKey: xenditApiKey !== undefined ? xenditApiKey : undefined,
+
+        bankName: bankName !== undefined ? bankName : undefined,
+        bankAccountNumber: bankAccountNumber !== undefined ? bankAccountNumber : undefined,
+        bankRecipientName: bankRecipientName !== undefined ? bankRecipientName : undefined
       }
     });
   }
