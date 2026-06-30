@@ -1,0 +1,784 @@
+// Menentukan penyedia database SQL Server (LocalDB)
+datasource db {
+  provider = "sqlserver"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ====================================================
+// 1. MULTI-TENANCY & WHITE-LABELING (B2B SAAS ORCHESTRATION)
+// ====================================================
+model Tenant {
+  id             String         @id @default(uuid())
+  name           String
+  domain         String         @unique // Domain kustom tenant (misal: hotel-a.com)
+  logoUrl        String?
+  status         String         @default("ACTIVE")  // ACTIVE, SUSPENDED, TRIAL
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  // Relasi
+  users          User[]
+  botConfigs     BotConfig[]
+  tradeRecords   TradeRecord[]
+  theme          TenantTheme?
+  subscriptions  TenantSubscription[]
+}
+
+model TenantTheme {
+  id             String   @id @default(uuid())
+  tenantId       String   @unique
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  primaryColor   String   @default("#06b6d4") // Warna tema utama (Hex)
+  secondaryColor String   @default("#7c3aed") // Warna tema sekunder (Hex)
+  fontFamily     String   @default("Inter")
+  customCss      String?  @db.NVarChar(Max)
+  updatedAt      DateTime @updatedAt
+}
+
+model TenantSubscription {
+  id             String   @id @default(uuid())
+  tenantId       String
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  planName       String   // Standard White-Label, Enterprise White-Label
+  price          Float
+  validUntil     DateTime
+  status         String   @default("ACTIVE") // ACTIVE, EXPIRED, PAST_DUE
+  createdAt      DateTime @default(now())
+}
+
+// ====================================================
+// 2. ENTITAS PENGGUNA & AUTHENTICATION (SECURITY SHIELD)
+// ====================================================
+model User {
+  id              String         @id @default(uuid())
+  tenantId        String?        // Null jika merupakan retail user di platform utama
+  tenant          Tenant?        @relation(fields: [tenantId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  legalName       String
+  email           String         @unique
+  passwordHash    String
+  phone           String?
+  country         String?
+  currency        String         @default("USD")
+  role            String         @default("USER")    // USER, MANAGER (PAMM), ADMIN, SUPERADMIN
+  status          String         @default("ACTIVE")  // ACTIVE, SUSPENDED, UNVERIFIED
+  
+  // Keamanan & KYC (Fase 11)
+  twoFactorOn     Boolean        @default(false)
+  twoFactorSecret String?
+  kycStatus       String         @default("NOT_SUBMITTED") // NOT_SUBMITTED, PENDING, APPROVED, REJECTED
+  kycDocumentUrl  String?
+  
+  // Fitur Integrasi Notifikasi & Afiliasi Profesional (Fase 12 & 15)
+  telegramChatId  String?        // ID obrolan Telegram untuk pengiriman sinyal bot real-time
+  referralCode    String         @unique @default(dbgenerated("NEWID()")) // Kode afiliasi unik pengguna
+  
+  // Verifikasi & OTP & Reset Password
+  isVerified      Boolean        @default(false)
+  verificationToken String?
+  otpCode         String?
+  otpExpiresAt    DateTime?
+  resetPasswordToken String?
+  resetPasswordExpiresAt DateTime?
+
+  // Relasi Peran Dinamis
+  roleId          String?
+  customRole      Role?          @relation(fields: [roleId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  menuPermissions UserMenuPermission[]
+
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  // Relasi
+  subscription   Subscription?
+  botConfigs     BotConfig[]
+  tradeRecords   TradeRecord[]
+  apiKeys        ApiKey[]
+  sessions       UserSession[]
+  auditLogs      AuditLog[]
+  loginAttempts  LoginAttempt[]
+  kycDocuments   KycDocument[]
+  brokerAccounts BrokerAccount[]
+  wallets        UserWallet[]
+  vpsInstances   VpsInstance[]
+  priceAlerts    PriceAlert[]
+  backtests      BacktestHistory[]
+  messages       UserMessage[]
+  
+  // PAMM Relasi
+  managedPools   PammPool[]     @relation("PoolManager")
+  investments    PammInvestor[]
+  
+  // Social Trading (Fase 16)
+  following      CopyBotConnection[] @relation("Follower")
+  followers      CopyBotConnection[] @relation("Leader")
+  leaderPerformance LeaderPerformance?
+  
+  // Support & Ticketing (Fase 19)
+  tickets        SupportTicket[]
+  ticketMessages TicketMessage[]
+  
+  // Kemitraan & Afiliasi (Fase 15)
+  referrals      Referral[]     @relation("Referrer")
+  referredBy     Referral?      @relation("Referred")
+  payouts        AffiliatePayout[]
+  
+  // Gamifikasi & Loyalitas (Fase 24)
+  badges         UserBadge[]
+  volumePoints   VolumePoint[]
+  rewardClaims   LoyaltyRewardClaim[]
+}
+
+model UserSession {
+  id             String   @id @default(uuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token          String   @unique
+  ipAddress      String
+  deviceAgent    String
+  location       String?
+  expiresAt      DateTime
+  createdAt      DateTime @default(now())
+}
+
+model LoginAttempt {
+  id             String   @id @default(uuid())
+  email          String
+  userId         String?
+  user           User?    @relation(fields: [userId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  ipAddress      String
+  userAgent      String
+  success        Boolean
+  attemptedAt    DateTime @default(now())
+}
+
+model AuditLog {
+  id             String   @id @default(uuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  action         String   // LOGIN, LOGOUT, START_BOT, STOP_BOT, PANIC_SELL, UPGRADE_SUB
+  ipAddress      String
+  details        String?  @db.NVarChar(Max) // Keterangan detail log dalam format teks atau JSON string
+  status         String   @default("SUCCESS") // SUCCESS, FAILED
+  createdAt      DateTime @default(now())
+}
+
+model KycDocument {
+  id             String   @id @default(uuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  documentType   String   // KTP, PASSPORT, DRIVERS_LICENSE
+  documentNumber String
+  fileUrl        String
+  status         String   @default("PENDING") // PENDING, APPROVED, REJECTED
+  rejectionReason String?
+  verifiedAt     DateTime?
+  createdAt      DateTime @default(now())
+}
+
+// ====================================================
+// 3. BROKER INTEGRATIONS (META-TRADER / CTRADER SYNC)
+// ====================================================
+model BrokerAccount {
+  id             String   @id @default(uuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  brokerName     String   // IC Markets, Pepperstone, Exness
+  accountNumber  String   @unique
+  passwordCipher String   // Sandi akun broker terenkripsi AES-256-GCM
+  serverAddress  String   // Broker server IP / Domain
+  leverage       Int      @default(500)
+  balance        Float    @default(0.0)
+  equity         Float    @default(0.0)
+  status         String   @default("DISCONNECTED") // CONNECTED, DISCONNECTED, INVALID_CREDENTIALS
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  syncLogs       BrokerSyncLog[]
+}
+
+model BrokerSyncLog {
+  id              String        @id @default(uuid())
+  brokerAccountId String
+  brokerAccount   BrokerAccount @relation(fields: [brokerAccountId], references: [id], onDelete: Cascade)
+  status          String        // SUCCESS, FAILED
+  errorMessage    String?
+  syncedAt        DateTime      @default(now())
+}
+
+// ====================================================
+// 4. MULTI-CURRENCY WALLET & PAYMENTS (DEPOSIT / WITHDRAWAL)
+// ====================================================
+model UserWallet {
+  id             String   @id @default(uuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  currency       String   @default("USD") // USD, EUR, USDT, BTC
+  balance        Float    @default(0.0)
+  address        String?  // Alamat dompet crypto jika jenis USDT/BTC
+  status         String   @default("ACTIVE") // ACTIVE, FROZEN
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  deposits       DepositRequest[]
+  withdrawals    WithdrawalRequest[]
+}
+
+model DepositRequest {
+  id             String     @id @default(uuid())
+  walletId       String
+  wallet         UserWallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  amount         Float
+  paymentMethod  String     // BANK_TRANSFER, QRIS, CRYPTO
+  proofUrl       String?    // URL bukti transfer/pembayaran
+  status         String     @default("PENDING") // PENDING, APPROVED, REJECTED
+  txHash         String?    // Hash transaksi blockchain jika crypto
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+}
+
+model WithdrawalRequest {
+  id             String     @id @default(uuid())
+  walletId       String
+  wallet         UserWallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  amount         Float
+  paymentMethod  String     // BANK_TRANSFER, CRYPTO
+  payoutDetails  String     // Nomor rekening / Alamat wallet tujuan
+  status         String     @default("PENDING") // PENDING, APPROVED, REJECTED
+  txHash         String?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+}
+
+// ====================================================
+// 5. VPS HOSTING MANAGEMENT (VPS FOR 24/7 BOT RUNTIME)
+// ====================================================
+model VpsInstance {
+  id             String   @id @default(uuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ipAddress      String?
+  status         String   @default("PROVISIONING") // PROVISIONING, RUNNING, STOPPED, EXPIRED
+  planName       String   // VPS Basic, VPS Advanced
+  region         String   // Singapore, Tokyo, New York
+  expiresAt      DateTime
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+// ====================================================
+// 6. SAAS BILLING & SUBSCRIPTIONS (FASE 7 & 15)
+// ====================================================
+model SubscriptionPlan {
+  id             String   @id @default(uuid())
+  name           String   // Basic, Pro, Enterprise
+  description    String?
+  priceMonthly   Float
+  priceYearly    Float
+  tier           String   @unique // BASIC, PRO, ENTERPRISE
+  featuresJson   String   // Menyimpan daftar fitur aktif dalam format JSON string
+  createdAt      DateTime @default(now())
+  
+  subscriptions  Subscription[]
+}
+
+model Subscription {
+  id             String           @id @default(uuid())
+  userId         String           @unique
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  planId         String
+  plan           SubscriptionPlan @relation(fields: [planId], references: [id])
+  status         String           @default("ACTIVE") // ACTIVE, PAST_DUE, CANCELED, EXPIRED
+  validUntil     DateTime
+  
+  // Payment Gateway References
+  stripeCustomerId   String?
+  stripeSubscriptionId String?
+  
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  transactions   Transaction[]
+  invoices       Invoice[]
+}
+
+model Transaction {
+  id             String       @id @default(uuid())
+  subscriptionId String
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  amount         Float
+  currency       String       @default("USD")
+  paymentGateway String       // STRIPE, QRIS, PAYPAL
+  gatewayRef     String?      // Nomor referensi transaksi dari gateway
+  status         String       @default("PENDING") // PENDING, SUCCESS, FAILED
+  createdAt      DateTime     @default(now())
+}
+
+model Invoice {
+  id             String       @id @default(uuid())
+  subscriptionId String
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  amount         Float
+  status         String       @default("UNPAID") // PAID, UNPAID, OVERDUE
+  pdfUrl         String?
+  dueDate        DateTime
+  paidAt         DateTime?
+  createdAt      DateTime     @default(now())
+}
+
+// ====================================================
+// 7. KEMITRAAN & PROGRAM AFILIASI (FASE 15)
+// ====================================================
+model Referral {
+  id             String   @id @default(uuid())
+  referrerId     String   // Pengundang
+  referrer       User     @relation("Referrer", fields: [referrerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  referredId     String   @unique // Yang diundang
+  referred       User     @relation("Referred", fields: [referredId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  commissionEarned Float  @default(0.0)
+  status         String   @default("PENDING") // PENDING, ACTIVE
+  createdAt      DateTime @default(now())
+}
+
+model AffiliatePayout {
+  id             String   @id @default(uuid())
+  affiliateId    String
+  affiliate      User     @relation(fields: [affiliateId], references: [id], onDelete: Cascade)
+  amount         Float
+  paymentMethod  String   // BANK_TRANSFER, PAYPAL, USDT
+  payoutDetails  String   // Rekening bank / alamat dompet crypto
+  status         String   @default("PENDING") // PENDING, PAID, REJECTED
+  paidAt         DateTime?
+  createdAt      DateTime @default(now())
+}
+
+// ====================================================
+// 8. PAMM / MAM MULTI-ACCOUNT POOLS (FASE 22)
+// ====================================================
+model PammPool {
+  id                  String         @id @default(uuid())
+  managerId           String
+  manager             User           @relation("PoolManager", fields: [managerId], references: [id])
+  name                String
+  description         String?
+  minInvestment       Float          @default(1000.0)
+  performanceFeePct   Float          @default(20.0) // Biaya bagi hasil (misal: 20%)
+  totalAum            Float          @default(0.0)  // Total dana kelolaan ($)
+  allTimeRoi          Float          @default(0.0)  // ROI sepanjang masa (%)
+  status              String         @default("ACTIVE") // ACTIVE, CLOSED
+  createdAt           DateTime       @default(now())
+  
+  // Relasi
+  investors           PammInvestor[]
+  tradeRecords        TradeRecord[]
+  allocations         PammAllocationLog[]
+}
+
+model PammInvestor {
+  id                  String   @id @default(uuid())
+  poolId              String
+  pool                PammPool @relation(fields: [poolId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  investorId          String
+  investor            User     @relation(fields: [investorId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  allocatedCapital    Float
+  sharePercentage     Float    // Persentase kepemilikan modal dalam pool (dinamis)
+  status              String   @default("ACTIVE") // ACTIVE, WITHDRAWN
+  joinedAt            DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+model PammAllocationLog {
+  id             String   @id @default(uuid())
+  poolId         String
+  pool           PammPool @relation(fields: [poolId], references: [id], onDelete: Cascade)
+  tradeRecordId  String
+  investorId     String
+  allocatedLot   Float
+  profitShare    Float
+  allocatedAt    DateTime @default(now())
+}
+
+// ====================================================
+// 9. AI BOT CONFIGURATION & PARAMETERS (FASE 10 & 23)
+// ====================================================
+model BotConfig {
+  id              String   @id @default(uuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  tenantId        String?
+  tenant          Tenant?  @relation(fields: [tenantId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  strategyName    String
+  isActive        Boolean  @default(false)
+  
+  // Parameter Manajemen Risiko Lanjutan
+  riskTolerance   Float    @default(2.0)  // Toleransi risiko (%)
+  lotMultiplier   Float    @default(1.0)  // Pengali lot
+  maxDrawdown     Float    @default(20.0) // Batas maksimum drawdown (%)
+  takeProfitPips  Float    @default(50.0)
+  stopLossPips    Float    @default(30.0)
+  
+  // Parameter Indikator Teknis & Integrasi Strategi
+  maCrossover     String   @default("EMA 20/50") // Konfigurasi MA Crossover
+  rsiFilter       Boolean  @default(true)
+  volatilityStop  Boolean  @default(true)
+  riskPercentage  Float    @default(2.0)
+  riskRewardRatio Float    @default(2.0)
+  
+  // Filter & Sentiment Indicators (Fase 23)
+  newsFilterOn    Boolean  @default(true)
+  useSentiment    Boolean  @default(false)
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  licenses        StrategyLicense[]
+}
+
+model StrategyLicense {
+  id             String    @id @default(uuid())
+  botConfigId    String
+  botConfig      BotConfig @relation(fields: [botConfigId], references: [id], onDelete: Cascade)
+  licenseKeyHash String    @unique
+  ipBound        String?
+  expiresAt      DateTime
+  status         String    @default("ACTIVE") // ACTIVE, EXPIRED, REVOKED
+  createdAt      DateTime  @default(now())
+}
+
+// ====================================================
+// 10. ORDER BOOK & TRADE RECORDS (FASE 3, 8, & 20)
+// ====================================================
+model TradeRecord {
+  id             String    @id @default(uuid())
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  tenantId       String?
+  tenant         Tenant?   @relation(fields: [tenantId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  pammPoolId     String?
+  pammPool       PammPool? @relation(fields: [pammPoolId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  
+  ticketId       String?   // ID Tiket transaksi dari broker asli (MetaTrader/cTrader)
+  magicNumber    Int?      // Angka pengenal unik transaksi robot forex
+  currencyPair   String    // EUR/USD, GBP/USD, USD/JPY, dll.
+  tradeType      String    // BUY, SELL
+  lotSize        Float
+  entryPrice     Float
+  closePrice     Float?
+  profitPips     Float?
+  profitAmount   Float?
+  swap           Float     @default(0.0)
+  commission     Float     @default(0.0)
+  comment        String?   // Komentar catatan transaksi
+  status         String    @default("OPEN") // OPEN, CLOSED
+  
+  // Variabel dinamis untuk audit tingkat institusi (Bappepti / Laporan Bulanan TBS)
+  spbEstate      Float?   
+
+  executedAt     DateTime  @default(now())
+  closedAt       DateTime?
+
+  executions     OrderExecutionLog[]
+  copyTrades     CopyTradeExecution[]
+}
+
+model OrderExecutionLog {
+  id             String      @id @default(uuid())
+  tradeRecordId  String
+  tradeRecord    TradeRecord @relation(fields: [tradeRecordId], references: [id], onDelete: Cascade)
+  actionType     String      // ORDER_SUBMITTED, ORDER_FILLED, ORDER_CLOSED
+  rawPayload     String?     @db.NVarChar(Max) // Payload request/response dari API Broker
+  loggedAt       DateTime    @default(now())
+}
+
+// ====================================================
+// 11. SOCIAL TRADING & COPY-BOT HUB (FASE 16)
+// ====================================================
+model CopyBotConnection {
+  id             String   @id @default(uuid())
+  followerId     String
+  follower       User     @relation("Follower", fields: [followerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  leaderId       String
+  leader         User     @relation("Leader", fields: [leaderId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  multiplier     Float    @default(1.0) // Pengali rasio volume copy trade
+  maxLossLimit   Float?   // Batas rugi maksimum sebelum pemutusan otomatis
+  status         String   @default("ACTIVE") // ACTIVE, PAUSED
+  createdAt      DateTime @default(now())
+}
+
+model LeaderPerformance {
+  id             String   @id @default(uuid())
+  userId         String   @unique
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  monthlyRoi     Float    @default(0.0)
+  winRate        Float    @default(0.0)
+  totalFollowers Int      @default(0)
+  totalAum       Float    @default(0.0) // Assets Under Management ($)
+  ranking        Int      @default(999)
+  updatedAt      DateTime @updatedAt
+}
+
+model CopyTradeExecution {
+  id             String      @id @default(uuid())
+  parentTradeId  String
+  parentTrade    TradeRecord @relation(fields: [parentTradeId], references: [id], onDelete: Cascade)
+  followerId     String
+  allocatedLot   Float
+  profitAmount   Float?
+  status         String      @default("OPEN") // OPEN, CLOSED
+  executedAt     DateTime    @default(now())
+}
+
+// ====================================================
+// 12. PRICE ALERTS & MARKET NOTIFICATIONS
+// ====================================================
+model PriceAlert {
+  id             String   @id @default(uuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  symbol         String   // EURUSD, GBPUSD
+  targetPrice    Float
+  condition      String   // ABOVE, BELOW
+  isTriggered    Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+// ====================================================
+// 13. STRATEGY BACKTEST HISTORY (FASE 10)
+// ====================================================
+model BacktestHistory {
+  id             String   @id @default(uuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  strategyName   String
+  paramsJson     String   // Parameter input backtest dalam format JSON string
+  resultJson     String   // Hasil performa backtest (ROI, Drawdown) dalam JSON
+  createdAt      DateTime @default(now())
+}
+
+// ====================================================
+// 14. INBOX & INTERNAL USER MESSAGES
+// ====================================================
+model UserMessage {
+  id             String   @id @default(uuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title          String
+  content        String   @db.NVarChar(Max)
+  isRead         Boolean  @default(false)
+  createdAt      DateTime @default(now())
+}
+
+// ====================================================
+// 15. SUPPORT TICKETS & HELP CENTER (FASE 19)
+// ====================================================
+model SupportTicket {
+  id             String          @id @default(uuid())
+  userId         String
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject        String
+  category       String          @default("GENERAL") // GENERAL, BILLING, TRADING, PARTNERSHIP
+  description    String
+  priority       String          @default("MEDIUM") // LOW, MEDIUM, HIGH
+  status         String          @default("OPEN")   // OPEN, IN_PROGRESS, RESOLVED, CLOSED
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  messages       TicketMessage[]
+}
+
+model TicketMessage {
+  id             String        @id @default(uuid())
+  ticketId       String
+  ticket         SupportTicket @relation(fields: [ticketId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  senderId       String
+  sender         User          @relation(fields: [senderId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  message        String
+  createdAt      DateTime      @default(now())
+}
+
+model KnowledgeBaseArticle {
+  id             String   @id @default(uuid())
+  category       String   // General, Billing, Trading, Security
+  title          String
+  content        String   @db.NVarChar(Max)
+  views          Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+// ====================================================
+// 16. B2B PUBLIC API & DEVELOPER PORTAL (FASE 21)
+// ====================================================
+model ApiKey {
+  id             String   @id @default(uuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  keyHash        String   @unique
+  permissions    String   // Format JSON string: ["READ", "TRADE"]
+  isRevoked      Boolean  @default(false)
+  createdAt      DateTime @default(now())
+}
+
+// ====================================================
+// 17. GAMIFIKASI & PROGRAM LOYALITAS (FASE 24)
+// ====================================================
+model Badge {
+  id             String      @id @default(uuid())
+  name           String      // Survivor, Sniper, Whale, Pioneer
+  description    String
+  iconName       String      // Nama ikon Lucide untuk dirender di frontend
+  requiredVol    Float       // Target volume kumulatif (Lot) untuk membukanya
+  
+  users          UserBadge[]
+}
+
+model UserBadge {
+  id             String   @id @default(uuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  badgeId        String
+  badge          Badge    @relation(fields: [badgeId], references: [id], onDelete: Cascade)
+  unlockedAt     DateTime @default(now())
+}
+
+model VolumePoint {
+  id             String   @id @default(uuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  month          String   // Format: YYYY-MM
+  volumeTraded   Float    // Total volume transaksi dalam bulan tersebut (Lot)
+  pointsEarned   Int      // Jumlah poin loyalitas terkumpul
+  updatedAt      DateTime @updatedAt
+}
+
+model LoyaltyRewardClaim {
+  id             String   @id @default(uuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rewardName     String   // Discount 50%, Free Premium Strategy
+  pointsSpent    Int
+  status         String   @default("APPROVED") // PENDING, APPROVED
+  claimedAt      DateTime @default(now())
+}
+
+// ====================================================
+// 18. MARKET SYMBOLS & ECONOMIC NEWS (FASE 23)
+// ====================================================
+model MarketSymbol {
+  id             String   @id @default(uuid())
+  symbol         String   @unique // EURUSD, GBPUSD
+  baseCurrency   String
+  quoteCurrency  String
+  pipSize        Float    @default(0.0001)
+  digits         Int      @default(5)
+  isActive       Boolean  @default(true)
+}
+
+model EconomicEvent {
+  id             String   @id @default(uuid())
+  time           String   // HH:mm
+  currency       String   // USD, EUR
+  event          String   // Non-Farm Employment Change
+  impact         String   // HIGH, MEDIUM, LOW
+  previous       String?
+  forecast       String?
+  actual         String?
+  eventDate      DateTime // Tanggal peristiwa ekonomi
+}
+
+model NewsSentiment {
+  id             String   @id @default(uuid())
+  currencyPair   String   // EUR/USD
+  sentimentScore Float    // 0.0 to 1.0
+  label          String   // BULLISH, BEARISH, NEUTRAL
+  keywords       String?  // JSON string
+  analyzedAt     DateTime @default(now())
+}
+
+model AppConfig {
+  id                  String   @id @default(uuid())
+  appName             String   @default("Forex Bot AI")
+  appDescription      String   @default("Professional SaaS Forex Trading Bot Platform")
+  backendUrl          String   @default("http://localhost:5000")
+  logoUrl             String   @default("https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?auto=format&fit=crop&w=120&h=120&q=80")
+  appVersion          String   @default("v3.0.0")
+  appUrl              String   @default("https://app.forexbot.ai")
+  appKey              String   @default("FX-BOT-AI-KEY-2026")
+  supportEmail        String   @default("support@forexbot.ai")
+  supportTelegram     String   @default("@forexbot_support")
+  defaultLanguage     String   @default("ID")
+  maintenanceMode     Boolean  @default(false)
+  globalMinDeposit    Float    @default(10.0)
+  globalCommissionPct Float    @default(0.0)
+  activeMenusJson     String   @db.NVarChar(Max)
+  
+  // Konfigurasi Tambahan Keamanan & Integrasi
+  loginOtpEnabled     Boolean  @default(false)
+  smtpEnabled         Boolean  @default(false)
+  oauthEnabled        Boolean  @default(false)
+  smtpHost            String   @default("smtp.mailtrap.io")
+  smtpPort            Int      @default(2525)
+  smtpUser            String   @default("")
+  smtpPass            String   @default("")
+  smtpSender          String   @default("noreply@forexbot.ai")
+  googleClientId      String   @default("")
+
+  updatedAt           DateTime @updatedAt
+}
+
+model SystemMenu {
+  id             String   @id @default(uuid())
+  key            String   @unique
+  name           String
+  path           String
+  iconName       String
+  order          Int      @default(0)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  roleAccesses    RoleMenuAccess[]
+  userPermissions UserMenuPermission[]
+}
+
+model Role {
+  id           String           @id @default(uuid())
+  name         String           @unique // e.g. SUPERADMIN, ADMIN, MANAGER, USER
+  description  String?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  users        User[]
+  menuAccesses RoleMenuAccess[]
+}
+
+model RoleMenuAccess {
+  id        String     @id @default(uuid())
+  roleId    String
+  role      Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  menuId    String
+  menu      SystemMenu @relation(fields: [menuId], references: [id], onDelete: Cascade)
+  canRead   Boolean    @default(true)
+  canWrite  Boolean    @default(false)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  @@unique([roleId, menuId])
+}
+
+model UserMenuPermission {
+  id        String     @id @default(uuid())
+  userId    String
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  menuId    String
+  menu      SystemMenu @relation(fields: [menuId], references: [id], onDelete: Cascade)
+  canRead   Boolean    @default(true)
+  canWrite  Boolean    @default(false)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  @@unique([userId, menuId])
+}
+
