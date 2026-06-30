@@ -1,6 +1,6 @@
 // Menentukan penyedia database SQL Server (LocalDB)
 datasource db {
-  provider = "sqlserver"
+  provider      = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -35,7 +35,7 @@ model TenantTheme {
   primaryColor   String   @default("#06b6d4") // Warna tema utama (Hex)
   secondaryColor String   @default("#7c3aed") // Warna tema sekunder (Hex)
   fontFamily     String   @default("Inter")
-  customCss      String?  @db.NVarChar(Max)
+  customCss      String?  @db.Text
   updatedAt      DateTime @updatedAt
 }
 
@@ -74,7 +74,7 @@ model User {
   
   // Fitur Integrasi Notifikasi & Afiliasi Profesional (Fase 12 & 15)
   telegramChatId  String?        // ID obrolan Telegram untuk pengiriman sinyal bot real-time
-  referralCode    String         @unique @default(dbgenerated("NEWID()")) // Kode afiliasi unik pengguna
+  referralCode    String         @unique @default(uuid()) // Kode afiliasi unik pengguna
   
   // Verifikasi & OTP & Reset Password
   isVerified      Boolean        @default(false)
@@ -161,7 +161,7 @@ model AuditLog {
   user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   action         String   // LOGIN, LOGOUT, START_BOT, STOP_BOT, PANIC_SELL, UPGRADE_SUB
   ipAddress      String
-  details        String?  @db.NVarChar(Max) // Keterangan detail log dalam format teks atau JSON string
+  details        String?  @db.Text // Keterangan detail log dalam format teks atau JSON string
   status         String   @default("SUCCESS") // SUCCESS, FAILED
   createdAt      DateTime @default(now())
 }
@@ -488,7 +488,7 @@ model OrderExecutionLog {
   tradeRecordId  String
   tradeRecord    TradeRecord @relation(fields: [tradeRecordId], references: [id], onDelete: Cascade)
   actionType     String      // ORDER_SUBMITTED, ORDER_FILLED, ORDER_CLOSED
-  rawPayload     String?     @db.NVarChar(Max) // Payload request/response dari API Broker
+  rawPayload     String?     @db.Text // Payload request/response dari API Broker
   loggedAt       DateTime    @default(now())
 }
 
@@ -566,7 +566,7 @@ model UserMessage {
   userId         String
   user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   title          String
-  content        String   @db.NVarChar(Max)
+  content        String   @db.Text
   isRead         Boolean  @default(false)
   createdAt      DateTime @default(now())
 }
@@ -603,7 +603,7 @@ model KnowledgeBaseArticle {
   id             String   @id @default(uuid())
   category       String   // General, Billing, Trading, Security
   title          String
-  content        String   @db.NVarChar(Max)
+  content        String   @db.Text
   views          Int      @default(0)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -713,7 +713,7 @@ model AppConfig {
   maintenanceMode     Boolean  @default(false)
   globalMinDeposit    Float    @default(10.0)
   globalCommissionPct Float    @default(0.0)
-  activeMenusJson     String   @db.NVarChar(Max)
+  activeMenusJson     String   @db.Text
   
   // Konfigurasi Tambahan Keamanan & Integrasi
   loginOtpEnabled     Boolean  @default(false)
