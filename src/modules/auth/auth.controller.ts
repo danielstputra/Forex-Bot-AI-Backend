@@ -78,6 +78,12 @@ export class AuthController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Delete('profile')
+  async deleteAccount(@Request() req: any) {
+    return this.authService.deleteAccount(req.user.sub);
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Get('audit-logs')
   async getAuditLogs(@Request() req: any) {
     return this.authService.getDbAuditLogs(req.user.sub);

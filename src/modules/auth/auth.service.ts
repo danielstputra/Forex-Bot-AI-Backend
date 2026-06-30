@@ -663,6 +663,12 @@ export class AuthService {
     };
   }
 
+  async deleteAccount(userId: string) {
+    return this.prisma.user.delete({
+      where: { id: userId }
+    });
+  }
+
   async getDbAuditLogs(userId: string) {
     return this.prisma.auditLog.findMany({
       where: { userId },
