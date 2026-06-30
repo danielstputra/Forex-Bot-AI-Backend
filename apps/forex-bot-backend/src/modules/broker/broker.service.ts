@@ -1,6 +1,7 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../core/prisma/prisma.service';
 import { encrypt } from '../../core/utils/crypto.util';
+import { BrokerApiClientFactory } from '@app/shared';
 
 @Injectable()
 export class BrokerService {
@@ -48,28 +49,38 @@ export class BrokerService {
     });
     if (!account) throw new BadRequestException('Broker account not found.');
 
-    // Simulate sync
-    const syncSuccess = Math.random() > 0.1; // 90% success rate mock
+    const client = BrokerApiClientFactory.getClient({
+      brokerName: account.brokerName,
+      accountNumber: account.accountNumber,
+      passwordCipher: account.passwordCipher,
+      serverAddress: account.serverAddress || '',
+    });
+
+    const res = await client.getAccountDetails();
 
     await this.prisma.brokerSyncLog.create({
       data: {
         brokerAccountId: account.id,
-        status: syncSuccess ? 'SUCCESS' : 'FAILED',
-        errorMessage: syncSuccess ? null : 'Connection timeout to broker server.'
+        status: res.success ? 'SUCCESS' : 'FAILED',
+        errorMessage: res.success ? null : res.errorMessage || 'Unknown broker error.'
       }
     });
 
-    if (syncSuccess) {
-      // Update balance mock
+    if (res.success && res.data) {
       await this.prisma.brokerAccount.update({
         where: { id: account.id },
-        data: { status: 'CONNECTED', updatedAt: new Date() }
+        data: {
+          status: 'CONNECTED',
+          balance: res.data.balance,
+          equity: res.data.equity,
+          updatedAt: new Date()
+        }
       });
     }
 
     return {
-      status: syncSuccess ? 'SUCCESS' : 'FAILED',
-      message: syncSuccess ? 'Account synced successfully.' : 'Sync failed. Check broker credentials.'
+      status: res.success ? 'SUCCESS' : 'FAILED',
+      message: res.success ? 'Account synced successfully.' : `Sync failed: ${res.errorMessage}`
     };
   }
 

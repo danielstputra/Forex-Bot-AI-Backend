@@ -1,8 +1,86 @@
 {
   "$schema": "https://json.schemastore.org/nest-cli",
   "collection": "@nestjs/schematics",
-  "sourceRoot": "src",
+  "sourceRoot": "apps/forex-bot-backend/src",
   "compilerOptions": {
-    "deleteOutDir": true
+    "deleteOutDir": true,
+    "webpack": true,
+    "tsConfigPath": "apps/forex-bot-backend/tsconfig.app.json"
+  },
+  "monorepo": true,
+  "root": "apps/forex-bot-backend",
+  "projects": {
+    "auth-service": {
+      "type": "application",
+      "root": "apps/auth-service",
+      "entryFile": "main",
+      "sourceRoot": "apps/auth-service/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/auth-service/tsconfig.app.json"
+      }
+    },
+    "backoffice-service": {
+      "type": "application",
+      "root": "apps/backoffice-service",
+      "entryFile": "main",
+      "sourceRoot": "apps/backoffice-service/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/backoffice-service/tsconfig.app.json"
+      }
+    },
+    "forex-bot-backend": {
+      "type": "application",
+      "root": "apps/forex-bot-backend",
+      "entryFile": "main",
+      "sourceRoot": "apps/forex-bot-backend/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/forex-bot-backend/tsconfig.app.json"
+      }
+    },
+    "loyalty-service": {
+      "type": "application",
+      "root": "apps/loyalty-service",
+      "entryFile": "main",
+      "sourceRoot": "apps/loyalty-service/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/loyalty-service/tsconfig.app.json"
+      }
+    },
+    "market-data-service": {
+      "type": "application",
+      "root": "apps/market-data-service",
+      "entryFile": "main",
+      "sourceRoot": "apps/market-data-service/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/market-data-service/tsconfig.app.json"
+      }
+    },
+    "order-service": {
+      "type": "application",
+      "root": "apps/order-service",
+      "entryFile": "main",
+      "sourceRoot": "apps/order-service/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/order-service/tsconfig.app.json"
+      }
+    },
+    "strategy-service": {
+      "type": "application",
+      "root": "apps/strategy-service",
+      "entryFile": "main",
+      "sourceRoot": "apps/strategy-service/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/strategy-service/tsconfig.app.json"
+      }
+    },
+    "shared": {
+      "type": "library",
+      "root": "libs/shared",
+      "entryFile": "index",
+      "sourceRoot": "libs/shared/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/shared/tsconfig.lib.json"
+      }
+    }
   }
 }
