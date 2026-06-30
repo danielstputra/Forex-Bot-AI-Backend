@@ -4,15 +4,40 @@ import { JwtService } from '@nestjs/jwt';
 import { MailService } from '../../core/mail/mail.service';
 import { hashPassword, verifyPassword } from '../../core/utils/crypto.util';
 import { getRsaKeys } from '../../core/auth/jwt-rsa.helper';
+import { createRedisClient } from '@app/shared';
 import * as crypto from 'crypto';
 
 @Injectable()
 export class AuthService {
+  private redis = createRedisClient();
+
   constructor(
     private prisma: PrismaService,
     private jwtService: JwtService,
     private mailService: MailService
   ) {}
+
+  private async enforceSessionLimit(tx: any, userId: string, tier: string) {
+    const activeSessions = await tx.userSession.findMany({
+      where: { userId, expiresAt: { gt: new Date() } },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    const maxSessions = tier === 'BASIC' ? 1 : tier === 'PRO' ? 3 : 5;
+
+    if (activeSessions.length >= maxSessions) {
+      const sessionsToRevoke = activeSessions.slice(0, activeSessions.length - maxSessions + 1);
+      for (const session of sessionsToRevoke) {
+        await tx.userSession.delete({ where: { id: session.id } });
+        this.redis.publish(
+          'session:force_logout',
+          JSON.stringify({ userId, token: session.token }),
+        ).catch((err: Error) => {
+          console.error('[AuthService] Failed to publish force_logout:', err.message);
+        });
+      }
+    }
+  }
 
   async register(body: any) {
     const { email, password, legalName } = body;
