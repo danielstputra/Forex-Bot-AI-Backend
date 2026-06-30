@@ -57,6 +57,13 @@ export class AuthController {
     return this.authService.googleLogin(body, ip, ua);
   }
 
+  @Post('faceid-login')
+  async faceidLogin(@Body('email') email: string, @Request() req: any) {
+    const ip = req.ip || req.headers['x-forwarded-for'] || '0.0.0.0';
+    const ua = req.headers['user-agent'] || 'Unknown';
+    return this.authService.faceidLogin(email, ip, ua);
+  }
+
   @UseGuards(JwtAuthGuard)
   @Post('logout')
   async logout(@Request() req: any) {

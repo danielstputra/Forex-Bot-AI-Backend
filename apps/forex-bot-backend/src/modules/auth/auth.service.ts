@@ -286,6 +286,85 @@ export class AuthService {
     };
   }
 
+  async faceidLogin(email: string, ipAddress: string, userAgent: string) {
+    if (!email) {
+      throw new BadRequestException('Email wajib diisi untuk melakukan login FaceID.');
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { email },
+      include: { subscription: { include: { plan: true } } }
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('Akun dengan email tersebut tidak ditemukan.');
+    }
+
+    if (!user.isVerified) {
+      throw new UnauthorizedException('Akun Anda belum diverifikasi. Silakan periksa email Anda.');
+    }
+
+    const { privateKey } = getRsaKeys();
+    const tier = user.subscription?.plan.tier || 'BASIC';
+    const payload = { sub: user.id, email: user.email, role: user.role, tier };
+
+    const token = await this.jwtService.signAsync(payload, {
+      privateKey,
+      algorithm: 'RS256',
+      expiresIn: '15m'
+    });
+
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+
+    await this.prisma.$transaction(async (tx) => {
+      await this.enforceSessionLimit(tx, user.id, tier);
+
+      await tx.loginAttempt.create({
+        data: {
+          email,
+          userId: user.id,
+          ipAddress,
+          userAgent,
+          success: true,
+          attemptedAt: new Date()
+        }
+      });
+
+      await tx.userSession.create({
+        data: {
+          userId: user.id,
+          token,
+          ipAddress,
+          deviceAgent: userAgent,
+          expiresAt
+        }
+      });
+
+      await tx.auditLog.create({
+        data: {
+          userId: user.id,
+          action: 'LOGIN',
+          ipAddress,
+          details: `Login via FaceID Biometrik`,
+          status: 'SUCCESS'
+        }
+      });
+    });
+
+    return {
+      access_token: token,
+      user: {
+        id: user.id,
+        email: user.email,
+        legalName: user.legalName,
+        role: user.role,
+        tier,
+        kycStatus: user.kycStatus,
+        twoFactorOn: user.twoFactorOn
+      }
+    };
+  }
+
   async verifyOtp(body: any, ipAddress: string, userAgent: string) {
     const { email, code } = body;
     if (!email || !code) {
