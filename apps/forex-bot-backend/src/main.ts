@@ -46,66 +46,7 @@ async function bootstrap() {
     next();
   });
 
-  // 3.2 Reverse Proxy Gateway Routing
-  const { createProxyMiddleware } = require('http-proxy-middleware');
-  console.log('[Gateway] Registering Microservice Proxies...');
-  
-  // Auth Service (Port 3001)
-  app.use('/auth', createProxyMiddleware({
-    target: process.env.AUTH_SERVICE_URL || 'http://localhost:3001',
-    changeOrigin: true,
-  }));
-
-  // Market Data Service (Port 3002) - Supports WebSockets
-  app.use('/socket.io', createProxyMiddleware({ 
-    target: process.env.MARKET_DATA_SERVICE_URL || 'http://localhost:3002', 
-    changeOrigin: true, 
-    ws: true,
-  }));
-
-  // Strategy & Signal Service (Port 3003)
-  app.use('/trading', createProxyMiddleware({
-    target: process.env.STRATEGY_SERVICE_URL || 'http://localhost:3003',
-    changeOrigin: true,
-  }));
-
-  // Order & Execution Service (Port 3004)
-  app.use('/pamm', createProxyMiddleware({
-    target: process.env.ORDER_SERVICE_URL || 'http://localhost:3004',
-    changeOrigin: true,
-  }));
-  app.use('/wallet', createProxyMiddleware({
-    target: process.env.ORDER_SERVICE_URL || 'http://localhost:3004',
-    changeOrigin: true,
-  }));
-  app.use('/wallets', createProxyMiddleware({
-    target: process.env.ORDER_SERVICE_URL || 'http://localhost:3004',
-    changeOrigin: true,
-  }));
-  app.use('/social', createProxyMiddleware({
-    target: process.env.ORDER_SERVICE_URL || 'http://localhost:3004',
-    changeOrigin: true,
-  }));
-
-  // Backoffice & Analytics Service (Port 3005)
-  app.use('/backoffice', createProxyMiddleware({
-    target: process.env.BACKOFFICE_SERVICE_URL || 'http://localhost:3005',
-    changeOrigin: true,
-  }));
-  app.use('/reporting', createProxyMiddleware({
-    target: process.env.BACKOFFICE_SERVICE_URL || 'http://localhost:3005',
-    changeOrigin: true,
-  }));
-  app.use('/tenant', createProxyMiddleware({
-    target: process.env.BACKOFFICE_SERVICE_URL || 'http://localhost:3005',
-    changeOrigin: true,
-  }));
-  app.use('/subscription', createProxyMiddleware({
-    target: process.env.BACKOFFICE_SERVICE_URL || 'http://localhost:3005',
-    changeOrigin: true,
-  }));
-
-  console.log('[Gateway] Microservice Proxies registered successfully.');
+  console.log('[Gateway] AppModule loaded with all business modules.');
 
   // 4. Global Validation
   app.useGlobalPipes(new ValidationPipe({
