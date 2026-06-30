@@ -232,7 +232,7 @@ export class BackofficeService {
   async updateUserStatus(userId: string, status: string) {
     return this.prisma.user.update({
       where: { id: userId },
-      data: { status }
+      data: { status: status as any }
     });
   }
 
@@ -549,17 +549,19 @@ export class BackofficeService {
   // ─── SUBSCRIPTION PLAN (TIER) MANAGEMENT ───────────────────────────────────────
   async listSubscriptionPlans() {
     return this.prisma.subscriptionPlan.findMany({
-      orderBy: { price: 'asc' }
+      orderBy: { priceMonthly: 'asc' }
     });
   }
 
   async createSubscriptionPlan(data: any) {
     const { name, tier, price, maxBots, maxBalance, commissionPct, features } = data;
+    const priceVal = parseFloat(price);
     return this.prisma.subscriptionPlan.create({
       data: {
         name,
         tier: tier.toUpperCase(),
-        price: parseFloat(price),
+        priceMonthly: priceVal,
+        priceYearly: priceVal * 12,
         maxBots: parseInt(maxBots),
         maxBalance: parseFloat(maxBalance),
         commissionPct: parseFloat(commissionPct),
@@ -570,11 +572,13 @@ export class BackofficeService {
 
   async updateSubscriptionPlan(id: string, data: any) {
     const { name, price, maxBots, maxBalance, commissionPct, features } = data;
+    const priceVal = price !== undefined ? parseFloat(price) : undefined;
     return this.prisma.subscriptionPlan.update({
       where: { id },
       data: {
         name: name !== undefined ? name : undefined,
-        price: price !== undefined ? parseFloat(price) : undefined,
+        priceMonthly: priceVal,
+        priceYearly: priceVal !== undefined ? priceVal * 12 : undefined,
         maxBots: maxBots !== undefined ? parseInt(maxBots) : undefined,
         maxBalance: maxBalance !== undefined ? parseFloat(maxBalance) : undefined,
         commissionPct: commissionPct !== undefined ? parseFloat(commissionPct) : undefined,

@@ -279,6 +279,9 @@ model SubscriptionPlan {
   priceMonthly   Float
   priceYearly    Float
   tier           String   @unique // BASIC, PRO, ENTERPRISE
+  maxBots        Int      @default(1)
+  maxBalance     Float    @default(1000.0)
+  commissionPct  Float    @default(0.0)
   featuresJson   String   // Menyimpan daftar fitur aktif dalam format JSON string
   createdAt      DateTime @default(now())
   
