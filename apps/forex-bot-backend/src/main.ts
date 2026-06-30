@@ -52,68 +52,57 @@ async function bootstrap() {
   
   // Auth Service (Port 3001)
   app.use('/auth', createProxyMiddleware({
-    target: 'http://localhost:3001',
+    target: process.env.AUTH_SERVICE_URL || 'http://localhost:3001',
     changeOrigin: true,
-    pathRewrite: (path: string) => `/auth${path}`
   }));
 
   // Market Data Service (Port 3002) - Supports WebSockets
   app.use('/socket.io', createProxyMiddleware({ 
-    target: 'http://localhost:3002', 
+    target: process.env.MARKET_DATA_SERVICE_URL || 'http://localhost:3002', 
     changeOrigin: true, 
     ws: true,
-    pathRewrite: (path: string) => `/socket.io${path}`
   }));
 
   // Strategy & Signal Service (Port 3003)
   app.use('/trading', createProxyMiddleware({
-    target: 'http://localhost:3003',
+    target: process.env.STRATEGY_SERVICE_URL || 'http://localhost:3003',
     changeOrigin: true,
-    pathRewrite: (path: string) => `/trading${path}`
   }));
 
   // Order & Execution Service (Port 3004)
   app.use('/pamm', createProxyMiddleware({
-    target: 'http://localhost:3004',
+    target: process.env.ORDER_SERVICE_URL || 'http://localhost:3004',
     changeOrigin: true,
-    pathRewrite: (path: string) => `/pamm${path}`
   }));
   app.use('/wallet', createProxyMiddleware({
-    target: 'http://localhost:3004',
+    target: process.env.ORDER_SERVICE_URL || 'http://localhost:3004',
     changeOrigin: true,
-    pathRewrite: (path: string) => `/wallet${path}`
   }));
   app.use('/wallets', createProxyMiddleware({
-    target: 'http://localhost:3004',
+    target: process.env.ORDER_SERVICE_URL || 'http://localhost:3004',
     changeOrigin: true,
-    pathRewrite: (path: string) => `/wallets${path}`
   }));
   app.use('/social', createProxyMiddleware({
-    target: 'http://localhost:3004',
+    target: process.env.ORDER_SERVICE_URL || 'http://localhost:3004',
     changeOrigin: true,
-    pathRewrite: (path: string) => `/social${path}`
   }));
 
   // Backoffice & Analytics Service (Port 3005)
   app.use('/backoffice', createProxyMiddleware({
-    target: 'http://localhost:3005',
+    target: process.env.BACKOFFICE_SERVICE_URL || 'http://localhost:3005',
     changeOrigin: true,
-    pathRewrite: (path: string) => `/backoffice${path}`
   }));
   app.use('/reporting', createProxyMiddleware({
-    target: 'http://localhost:3005',
+    target: process.env.BACKOFFICE_SERVICE_URL || 'http://localhost:3005',
     changeOrigin: true,
-    pathRewrite: (path: string) => `/reporting${path}`
   }));
   app.use('/tenant', createProxyMiddleware({
-    target: 'http://localhost:3005',
+    target: process.env.BACKOFFICE_SERVICE_URL || 'http://localhost:3005',
     changeOrigin: true,
-    pathRewrite: (path: string) => `/tenant${path}`
   }));
   app.use('/subscription', createProxyMiddleware({
-    target: 'http://localhost:3005',
+    target: process.env.BACKOFFICE_SERVICE_URL || 'http://localhost:3005',
     changeOrigin: true,
-    pathRewrite: (path: string) => `/subscription${path}`
   }));
 
   console.log('[Gateway] Microservice Proxies registered successfully.');
