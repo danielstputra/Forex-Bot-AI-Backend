@@ -1,9 +1,34 @@
 version: '3.8'
+
 services:
+  # 1. Database Service (SQL Server)
   sqlserver:
     image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: forex_sqlserver
     environment:
       - ACCEPT_EULA=Y
-      - MSSQL_SA_PASSWORD=YourStrong!Passw0rd
+      - MSSQL_SA_PASSWORD=${MSSQL_SA_PASSWORD}
     ports:
       - "1433:1433"
+    volumes:
+      - mssql_data:/var/opt/mssql # Mencegah data hilang saat restart
+    restart: always
+
+  # 2. Backend Service (NestJS)
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: forex_backend
+    ports:
+      - "5000:5000"
+    environment:
+      - PORT=5000
+      - DATABASE_URL=sqlserver://sqlserver:1433;database=ForexBotAI;user=sa;password=${MSSQL_SA_PASSWORD};encrypt=true;trustServerCertificate=true
+      - JWT_SECRET=${JWT_SECRET}
+    depends_on:
+      - sqlserver
+    restart: always
+
+volumes:
+  mssql_data: # Definisikan volume untuk penyimpanan data permanen
