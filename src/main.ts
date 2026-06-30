@@ -17,7 +17,7 @@ async function bootstrap() {
 
   // 3. CORS Configuration
   app.enableCors({
-    origin: '*', // Allow all origins for local testing and cross-origin simulation
+    origin: true, // Dynamic origin matching, required when credentials: true
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     credentials: true,
   });
