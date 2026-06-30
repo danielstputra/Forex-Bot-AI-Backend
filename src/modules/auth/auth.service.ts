@@ -623,12 +623,43 @@ export class AuthService {
       id: user.id,
       email: user.email,
       legalName: user.legalName,
+      phone: user.phone,
+      country: user.country,
       role: user.role,
       kycStatus: user.kycStatus,
       twoFactorOn: user.twoFactorOn,
       subscription: user.subscription,
       tier: user.subscription?.plan.tier || 'BASIC',
       botConfig: user.botConfigs[0] || null
+    };
+  }
+
+  async updateProfile(userId: string, body: any) {
+    const { legalName, phone, country, newPassword } = body;
+    
+    const updateData: any = {};
+    if (legalName !== undefined) updateData.legalName = legalName;
+    if (phone !== undefined) updateData.phone = phone;
+    if (country !== undefined) updateData.country = country;
+    
+    if (newPassword) {
+      updateData.passwordHash = await hashPassword(newPassword);
+    }
+
+    const updatedUser = await this.prisma.user.update({
+      where: { id: userId },
+      data: updateData
+    });
+
+    return {
+      id: updatedUser.id,
+      email: updatedUser.email,
+      legalName: updatedUser.legalName,
+      phone: updatedUser.phone,
+      country: updatedUser.country,
+      role: updatedUser.role,
+      kycStatus: updatedUser.kycStatus,
+      twoFactorOn: updatedUser.twoFactorOn
     };
   }
 
@@ -699,10 +730,109 @@ export class AuthService {
     });
   }
 
-  async setup2fa(userId: string) {
+  async setup2fa(userId: string, code: string) {
+    if (!code) {
+      throw new BadRequestException('Kode OTP wajib diisi.');
+    }
+
+    // Verifikasi OTP menggunakan fungsi TOTP murni
+    const isOtpValid = verifyTOTP(code, 'JBSWY3DPEHPK3PXP');
+    if (!isOtpValid) {
+      throw new BadRequestException('Kode OTP 2FA tidak valid atau sudah kedaluwarsa.');
+    }
+
     return this.prisma.user.update({
       where: { id: userId },
-      data: { twoFactorOn: true }
+      data: { twoFactorOn: true, twoFactorSecret: 'JBSWY3DPEHPK3PXP' }
     });
   }
+
+  async getAppConfig() {
+    let config = await this.prisma.appConfig.findFirst();
+    if (!config) {
+      config = await this.prisma.appConfig.create({
+        data: {
+          appName: 'Forex Bot AI',
+          appDescription: 'Professional SaaS Forex Trading Bot Platform',
+          backendUrl: 'https://forex-bot-ai-backend-production.up.railway.app',
+          logoUrl: 'https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?auto=format&fit=crop&w=120&h=120&q=80',
+          appVersion: 'v3.0.0',
+          appUrl: 'https://app.forexbot.ai',
+          appKey: 'FX-BOT-AI-KEY-2026',
+          supportEmail: 'support@forexbot.ai',
+          supportTelegram: '@forexbot_support',
+          defaultLanguage: 'ID',
+          maintenanceMode: false,
+          globalMinDeposit: 10.0,
+          globalCommissionPct: 0.0,
+          activeMenusJson: '[]',
+          activePaymentGateway: 'MIDTRANS',
+          midtransServerKey: 'SB-Mid-server-dnX0h4Vb3R4uWq7fP0l4t7e8',
+          xenditApiKey: ''
+        }
+      });
+    }
+    return config;
+  }
+}
+
+// Helper untuk mendekode Base32 (karena secret TOTP dalam format Base32)
+function base32Decode(base32: string): Buffer {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  let bits = 0;
+  let value = 0;
+  const len = base32.length;
+  const arr = [];
+
+  for (let i = 0; i < len; i++) {
+    const val = alphabet.indexOf(base32[i].toUpperCase());
+    if (val === -1) continue;
+    value = (value << 5) | val;
+    bits += 5;
+    if (bits >= 8) {
+      arr.push((value >> (bits - 8)) & 255);
+      bits -= 8;
+    }
+  }
+  return Buffer.from(arr);
+}
+
+// Fungsi verifikasi TOTP murni menggunakan HMAC-SHA1 bawaan Node.js
+function verifyTOTP(token: string, secret: string): boolean {
+  try {
+    const key = base32Decode(secret);
+    const epoch = Math.round(Date.now() / 1000);
+    const timeStep = 30;
+    const counter = Math.floor(epoch / timeStep);
+
+    // Cek langkah waktu saat ini, sebelumnya, dan sesudahnya (toleransi waktu 30 detik)
+    for (let i = -1; i <= 1; i++) {
+      const c = counter + i;
+      const buf = Buffer.alloc(8);
+      let tmp = c;
+      for (let j = 7; j >= 0; j--) {
+        buf[j] = tmp & 0xff;
+        tmp = tmp >> 8;
+      }
+
+      const hmac = crypto.createHmac('sha1', key);
+      hmac.update(buf);
+      const hmacResult = hmac.digest();
+
+      const offset = hmacResult[hmacResult.length - 1] & 0xf;
+      const code =
+        ((hmacResult[offset] & 0x7f) << 24) |
+        ((hmacResult[offset + 1] & 0xff) << 16) |
+        ((hmacResult[offset + 2] & 0xff) << 8) |
+        (hmacResult[offset + 3] & 0xff);
+
+      const otp = (code % 1000000).toString().padStart(6, '0');
+      if (otp === token) {
+        return true;
+      }
+    }
+  } catch (e) {
+    console.error('Error verifying TOTP:', e);
+  }
+  return false;
 }

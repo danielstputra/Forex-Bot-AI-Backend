@@ -158,15 +158,15 @@ export class BackofficeService {
       include: { plan: true }
     });
 
-    let mrrPro = 0;
+    let mrrPremium = 0;
     let mrrEnterprise = 0;
 
     subs.forEach(s => {
-      if (s.plan.tier === 'PRO') mrrPro += 49;
+      if (s.plan.tier === 'PREMIUM') mrrPremium += 49;
       if (s.plan.tier === 'ENTERPRISE') mrrEnterprise += 299;
     });
 
-    const totalMrr = mrrPro + mrrEnterprise;
+    const totalMrr = mrrPremium + mrrEnterprise;
 
     return {
       currency: 'USD',
@@ -260,7 +260,7 @@ export class BackofficeService {
         data: {
           appName: 'Forex Bot AI',
           appDescription: 'Professional SaaS Forex Trading Bot Platform',
-          backendUrl: 'http://localhost:5000',
+          backendUrl: 'https://forex-bot-ai-backend-production.up.railway.app',
           logoUrl: 'https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?auto=format&fit=crop&w=120&h=120&q=80',
           appVersion: 'v3.0.0',
           appUrl: 'https://app.forexbot.ai',
@@ -283,7 +283,10 @@ export class BackofficeService {
           smtpUser: '',
           smtpPass: '',
           smtpSender: 'noreply@forexbot.ai',
-          googleClientId: ''
+          googleClientId: '',
+          activePaymentGateway: 'MIDTRANS',
+          midtransServerKey: 'SB-Mid-server-dnX0h4Vb3R4uWq7fP0l4t7e8',
+          xenditApiKey: ''
         }
       });
     }
@@ -298,7 +301,8 @@ export class BackofficeService {
       supportEmail, supportTelegram, defaultLanguage, 
       maintenanceMode, globalMinDeposit, globalCommissionPct, activeMenus,
       loginOtpEnabled, smtpEnabled, oauthEnabled,
-      smtpHost, smtpPort, smtpUser, smtpPass, smtpSender, googleClientId
+      smtpHost, smtpPort, smtpUser, smtpPass, smtpSender, googleClientId,
+      activePaymentGateway, midtransServerKey, xenditApiKey
     } = body;
 
     return this.prisma.appConfig.update({
@@ -327,7 +331,11 @@ export class BackofficeService {
         smtpUser: smtpUser !== undefined ? smtpUser : undefined,
         smtpPass: smtpPass !== undefined ? smtpPass : undefined,
         smtpSender: smtpSender !== undefined ? smtpSender : undefined,
-        googleClientId: googleClientId !== undefined ? googleClientId : undefined
+        googleClientId: googleClientId !== undefined ? googleClientId : undefined,
+        
+        activePaymentGateway: activePaymentGateway !== undefined ? activePaymentGateway : undefined,
+        midtransServerKey: midtransServerKey !== undefined ? midtransServerKey : undefined,
+        xenditApiKey: xenditApiKey !== undefined ? xenditApiKey : undefined
       }
     });
   }
@@ -535,6 +543,49 @@ export class BackofficeService {
 
       // Jika tidak ada override, gunakan izin Peran
       return roleAccesses.some(ra => ra.menuId === menu.id);
+    });
+  }
+
+  // ─── SUBSCRIPTION PLAN (TIER) MANAGEMENT ───────────────────────────────────────
+  async listSubscriptionPlans() {
+    return this.prisma.subscriptionPlan.findMany({
+      orderBy: { price: 'asc' }
+    });
+  }
+
+  async createSubscriptionPlan(data: any) {
+    const { name, tier, price, maxBots, maxBalance, commissionPct, features } = data;
+    return this.prisma.subscriptionPlan.create({
+      data: {
+        name,
+        tier: tier.toUpperCase(),
+        price: parseFloat(price),
+        maxBots: parseInt(maxBots),
+        maxBalance: parseFloat(maxBalance),
+        commissionPct: parseFloat(commissionPct),
+        featuresJson: JSON.stringify(features || [])
+      }
+    });
+  }
+
+  async updateSubscriptionPlan(id: string, data: any) {
+    const { name, price, maxBots, maxBalance, commissionPct, features } = data;
+    return this.prisma.subscriptionPlan.update({
+      where: { id },
+      data: {
+        name: name !== undefined ? name : undefined,
+        price: price !== undefined ? parseFloat(price) : undefined,
+        maxBots: maxBots !== undefined ? parseInt(maxBots) : undefined,
+        maxBalance: maxBalance !== undefined ? parseFloat(maxBalance) : undefined,
+        commissionPct: commissionPct !== undefined ? parseFloat(commissionPct) : undefined,
+        featuresJson: features !== undefined ? JSON.stringify(features) : undefined
+      }
+    });
+  }
+
+  async deleteSubscriptionPlan(id: string) {
+    return this.prisma.subscriptionPlan.delete({
+      where: { id }
     });
   }
 }

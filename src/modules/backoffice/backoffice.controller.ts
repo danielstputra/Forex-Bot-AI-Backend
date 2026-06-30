@@ -150,4 +150,25 @@ export class BackofficeController {
   async getAuthorizedMenusForUser(@Request() req: any) {
     return this.backofficeService.getAuthorizedMenusForUser(req.user.sub);
   }
+
+  // ─── SUBSCRIPTION PLAN (TIER) ENDPOINTS ───────────────────────────────────────
+  @Get('subscription-plans')
+  async listSubscriptionPlans() {
+    return this.backofficeService.listSubscriptionPlans();
+  }
+
+  @Post('subscription-plans')
+  async createSubscriptionPlan(@Body() body: any) {
+    return this.backofficeService.createSubscriptionPlan(body);
+  }
+
+  @Put('subscription-plans/:id')
+  async updateSubscriptionPlan(@Param('id') id: string, @Body() body: any) {
+    return this.backofficeService.updateSubscriptionPlan(id, body);
+  }
+
+  @Delete('subscription-plans/:id')
+  async deleteSubscriptionPlan(@Param('id') id: string) {
+    return this.backofficeService.deleteSubscriptionPlan(id);
+  }
 }

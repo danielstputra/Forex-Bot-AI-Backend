@@ -64,7 +64,7 @@ model User {
   country         String?
   currency        String         @default("USD")
   role            String         @default("USER")    // USER, MANAGER (PAMM), ADMIN, SUPERADMIN
-  status          String         @default("ACTIVE")  // ACTIVE, SUSPENDED, UNVERIFIED
+  status          UserStatus     @default(ACTIVE)
   
   // Keamanan & KYC (Fase 11)
   twoFactorOn     Boolean        @default(false)
@@ -726,6 +726,11 @@ model AppConfig {
   smtpSender          String   @default("noreply@forexbot.ai")
   googleClientId      String   @default("")
 
+  // Konfigurasi Payment Gateway (Fase 15)
+  activePaymentGateway String   @default("MIDTRANS") // MIDTRANS, XENDIT, MANUAL
+  midtransServerKey    String   @default("SB-Mid-server-dnX0h4Vb3R4uWq7fP0l4t7e8")
+  xenditApiKey         String   @default("")
+
   updatedAt           DateTime @updatedAt
 }
 
@@ -780,5 +785,12 @@ model UserMenuPermission {
   updatedAt DateTime   @updatedAt
 
   @@unique([userId, menuId])
+}
+
+enum UserStatus {
+  ACTIVE
+  PENDING
+  DEACTIVE
+  BANNED
 }
 

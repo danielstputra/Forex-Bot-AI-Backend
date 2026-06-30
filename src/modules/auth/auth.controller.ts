@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Delete, Body, Param, UseGuards, Request, UseInterceptors, UploadedFile, BadRequestException } from '@nestjs/common';
+import { Controller, Post, Get, Put, Delete, Body, Param, UseGuards, Request, UseInterceptors, UploadedFile, BadRequestException } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from '../../core/auth/jwt-auth.guard';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -19,6 +19,11 @@ export class AuthController {
     const ip = req.ip || req.headers['x-forwarded-for'] || '0.0.0.0';
     const ua = req.headers['user-agent'] || 'Unknown';
     return this.authService.verifyAccount(token, ip, ua);
+  }
+
+  @Get('config')
+  async getAppConfig() {
+    return this.authService.getAppConfig();
   }
 
   @Post('login')
@@ -67,6 +72,12 @@ export class AuthController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Put('profile')
+  async updateProfile(@Request() req: any, @Body() body: any) {
+    return this.authService.updateProfile(req.user.sub, body);
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Get('audit-logs')
   async getAuditLogs(@Request() req: any) {
     return this.authService.getDbAuditLogs(req.user.sub);
@@ -92,8 +103,8 @@ export class AuthController {
 
   @UseGuards(JwtAuthGuard)
   @Post('2fa/setup')
-  async setup2fa(@Request() req: any) {
-    return this.authService.setup2fa(req.user.sub);
+  async setup2fa(@Request() req: any, @Body('code') code: string) {
+    return this.authService.setup2fa(req.user.sub, code);
   }
 
   // ─── KYC DOCUMENT ──────────────────────────────────────────

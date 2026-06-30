@@ -54,11 +54,11 @@ async function main() {
       featuresJson: JSON.stringify(['EUR/USD Only', '1m Timeframe', 'RSI Indicator'])
     },
     {
-      name: 'Pro Plan',
-      description: 'Akses penuh fitur multi-pair dan sentimen AI',
+      name: 'Premium Plan',
+      description: 'Akses penuh fitur premium, multi-pair, dan sentimen AI',
       priceMonthly: 49.0,
       priceYearly: 490.0,
-      tier: 'PRO',
+      tier: 'PREMIUM',
       featuresJson: JSON.stringify(['All Currency Pairs', 'All Timeframes', 'AI News Sentiment', 'Custom TakeProfit/StopLoss'])
     },
     {
@@ -147,7 +147,7 @@ async function main() {
   await prisma.roleMenuAccess.deleteMany({});
   await prisma.userMenuPermission.deleteMany({});
   await prisma.systemMenu.deleteMany({});
-  
+
   const defaultMenus = [
     { key: 'dashboard', name: 'Dashboard Utama', path: 'dashboard', iconName: 'TrendingUp', order: 1, isActive: true },
     { key: 'inbox', name: 'Kotak Masuk', path: 'inbox', iconName: 'Mail', order: 2, isActive: true },
@@ -221,13 +221,13 @@ async function main() {
   // 8. Create Default Users (Admin & Retail User)
   const adminEmail = 'admin@forexbot.ai';
   const userEmail = 'user@forexbot.ai';
-  
+
   const passwordHash = await argon2.hash('Password123!');
 
   // Seed Admin User
   const adminUser = await prisma.user.upsert({
     where: { email: adminEmail },
-    update: { 
+    update: {
       passwordHash,
       isVerified: true,
       roleId: roleMap['SUPERADMIN'].id
@@ -249,7 +249,7 @@ async function main() {
   // Seed Retail User
   const retailUser = await prisma.user.upsert({
     where: { email: userEmail },
-    update: { 
+    update: {
       passwordHash,
       isVerified: true,
       roleId: roleMap['USER'].id
@@ -315,7 +315,7 @@ async function main() {
     data: {
       appName: 'Forex Bot AI',
       appDescription: 'Professional SaaS Forex Trading Bot Platform',
-      backendUrl: 'http://localhost:5000',
+      backendUrl: 'https://forex-bot-ai-backend-production.up.railway.app',
       logoUrl: 'https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?auto=format&fit=crop&w=120&h=120&q=80',
       appVersion: 'v3.0.0',
       appUrl: 'https://app.forexbot.ai',
@@ -327,7 +327,7 @@ async function main() {
       globalMinDeposit: 10.0,
       globalCommissionPct: 0.0,
       activeMenusJson: JSON.stringify(allMenuKeys),
-      
+
       // Default Advanced Auth Configs
       loginOtpEnabled: false,
       smtpEnabled: false,
@@ -337,7 +337,12 @@ async function main() {
       smtpUser: '',
       smtpPass: '',
       smtpSender: 'noreply@forexbot.ai',
-      googleClientId: ''
+      googleClientId: '',
+
+      // Payment Gateway Configs (Fase 15)
+      activePaymentGateway: 'MIDTRANS',
+      midtransServerKey: 'SB-Mid-server-dnX0h4Vb3R4uWq7fP0l4t7e8',
+      xenditApiKey: ''
     }
   });
   console.log('Created Default AppConfig');

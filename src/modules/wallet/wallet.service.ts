@@ -47,7 +47,8 @@ export class WalletService {
       throw new BadRequestException(`Wallet for currency ${currency} not found.`);
     }
 
-    return this.prisma.depositRequest.create({
+    // 1. Buat request deposit di database
+    const deposit = await this.prisma.depositRequest.create({
       data: {
         walletId: wallet.id,
         amount: parseFloat(amount),
@@ -56,6 +57,177 @@ export class WalletService {
         status: 'PENDING'
       }
     });
+
+    // 2. Baca konfigurasi payment gateway aktif dari database
+    const appConfig = await this.prisma.appConfig.findFirst();
+    const activeGateway = appConfig?.activePaymentGateway || 'MIDTRANS';
+    const midtransKey = appConfig?.midtransServerKey || process.env.MIDTRANS_SERVER_KEY || 'SB-Mid-server-dnX0h4Vb3R4uWq7fP0l4t7e8';
+    const xenditKey = appConfig?.xenditApiKey || process.env.XENDIT_API_KEY || '';
+
+    // 3. Jika metode adalah QRIS, lakukan integrasi sesuai gateway aktif
+    if (paymentMethod === 'QRIS') {
+      if (activeGateway === 'MIDTRANS') {
+        try {
+          const authHeader = Buffer.from(midtransKey + ':').toString('base64');
+          const amountInIdr = Math.round(deposit.amount * (currency === 'USD' ? 16000 : 1));
+
+          const midtransUrl = 'https://api.sandbox.midtrans.com/v2/charge';
+          const response = await fetch(midtransUrl, {
+            method: 'POST',
+            headers: {
+              'Accept': 'application/json',
+              'Content-Type': 'application/json',
+              'Authorization': `Basic ${authHeader}`
+            },
+            body: JSON.stringify({
+              payment_type: 'qris',
+              transaction_details: {
+                order_id: deposit.id,
+                gross_amount: amountInIdr
+              }
+            })
+          });
+
+          const data = await response.json();
+          if (response.ok && data.actions && data.actions[0]) {
+            const qrUrl = data.actions[0].url;
+            const updatedDeposit = await this.prisma.depositRequest.update({
+              where: { id: deposit.id },
+              data: { proofUrl: qrUrl }
+            });
+            return {
+              ...updatedDeposit,
+              qrUrl
+            };
+          }
+        } catch (err) {
+          console.error('Error initiating Midtrans payment:', err);
+        }
+      } else if (activeGateway === 'XENDIT' && xenditKey) {
+        try {
+          const authHeader = Buffer.from(xenditKey + ':').toString('base64');
+          const amountInIdr = Math.round(deposit.amount * (currency === 'USD' ? 16000 : 1));
+
+          const xenditUrl = 'https://api.xendit.co/qr_codes';
+          const response = await fetch(xenditUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Basic ${authHeader}`
+            },
+            body: JSON.stringify({
+              reference_id: deposit.id,
+              type: 'DYNAMIC',
+              currency: 'IDR',
+              amount: amountInIdr
+            })
+          });
+
+          const data = await response.json();
+          if (response.ok && data.qr_string) {
+            // Render QRIS string EMVCo menggunakan API QR Code gratis
+            const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(data.qr_string)}`;
+            const updatedDeposit = await this.prisma.depositRequest.update({
+              where: { id: deposit.id },
+              data: { proofUrl: qrUrl }
+            });
+            return {
+              ...updatedDeposit,
+              qrUrl
+            };
+          }
+        } catch (err) {
+          console.error('Error initiating Xendit payment:', err);
+        }
+      }
+    }
+
+    return deposit;
+  }
+
+  async handleMidtransWebhook(body: any) {
+    const { order_id, transaction_status } = body;
+    if (!order_id || !transaction_status) {
+      throw new BadRequestException('Invalid webhook payload');
+    }
+
+    try {
+      const appConfig = await this.prisma.appConfig.findFirst();
+      const midtransKey = appConfig?.midtransServerKey || process.env.MIDTRANS_SERVER_KEY || 'SB-Mid-server-dnX0h4Vb3R4uWq7fP0l4t7e8';
+      const authHeader = Buffer.from(midtransKey + ':').toString('base64');
+      const statusUrl = `https://api.sandbox.midtrans.com/v2/${order_id}/status`;
+      
+      const response = await fetch(statusUrl, {
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'Authorization': `Basic ${authHeader}`
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const status = data.transaction_status;
+
+        if (status === 'settlement' || status === 'capture') {
+          const deposit = await this.prisma.depositRequest.findUnique({
+            where: { id: order_id },
+            include: { wallet: true }
+          });
+
+          if (deposit && deposit.status === 'PENDING') {
+            await this.prisma.$transaction(async (tx) => {
+              await tx.depositRequest.update({
+                where: { id: order_id },
+                data: { status: 'APPROVED' }
+              });
+              await tx.userWallet.update({
+                where: { id: deposit.walletId },
+                data: { balance: { increment: deposit.amount } }
+              });
+            });
+            console.log(`[Midtrans Webhook] Deposit ${order_id} berhasil diverifikasi dan saldo ditambahkan.`);
+            return { success: true, message: 'Deposit approved' };
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Error handling Midtrans webhook:', err);
+    }
+    return { success: false };
+  }
+
+  async handleXenditWebhook(body: any) {
+    const { event, data } = body;
+    if (event === 'qr_code.payment' && data) {
+      const { reference_id, status } = data;
+      if (status === 'COMPLETED') {
+        try {
+          const deposit = await this.prisma.depositRequest.findUnique({
+            where: { id: reference_id },
+            include: { wallet: true }
+          });
+
+          if (deposit && deposit.status === 'PENDING') {
+            await this.prisma.$transaction(async (tx) => {
+              await tx.depositRequest.update({
+                where: { id: reference_id },
+                data: { status: 'APPROVED' }
+              });
+              await tx.userWallet.update({
+                where: { id: deposit.walletId },
+                data: { balance: { increment: deposit.amount } }
+              });
+            });
+            console.log(`[Xendit Webhook] Deposit ${reference_id} berhasil diverifikasi dan saldo ditambahkan.`);
+            return { success: true, message: 'Deposit approved' };
+          }
+        } catch (err) {
+          console.error('Error handling Xendit webhook:', err);
+        }
+      }
+    }
+    return { success: false };
   }
 
   async requestWithdrawal(userId: string, body: any) {

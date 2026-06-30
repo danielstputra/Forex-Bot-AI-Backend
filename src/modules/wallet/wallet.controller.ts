@@ -6,15 +6,16 @@ import { diskStorage } from 'multer';
 import * as path from 'path';
 
 @Controller('wallets')
-@UseGuards(JwtAuthGuard)
 export class WalletController {
   constructor(private walletService: WalletService) {}
 
+  @UseGuards(JwtAuthGuard)
   @Get()
   async getWallets(@Request() req: any) {
     return this.walletService.getWallets(req.user.sub);
   }
 
+  @UseGuards(JwtAuthGuard)
   @Post('deposit')
   @UseInterceptors(
     FileInterceptor('proof', {
@@ -38,8 +39,19 @@ export class WalletController {
     return this.walletService.requestDeposit(req.user.sub, body, filename);
   }
 
+  @UseGuards(JwtAuthGuard)
   @Post('withdraw')
   async requestWithdrawal(@Request() req: any, @Body() body: any) {
     return this.walletService.requestWithdrawal(req.user.sub, body);
+  }
+
+  @Post('webhook/midtrans')
+  async handleMidtransWebhook(@Body() body: any) {
+    return this.walletService.handleMidtransWebhook(body);
+  }
+
+  @Post('webhook/xendit')
+  async handleXenditWebhook(@Body() body: any) {
+    return this.walletService.handleXenditWebhook(body);
   }
 }
