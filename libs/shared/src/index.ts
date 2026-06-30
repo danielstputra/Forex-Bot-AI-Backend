@@ -10,3 +10,4 @@ export * from './core/auth/jwt-rsa.helper';
 export * from './core/auth/shared-jwt.module';
 export * from './core/filters/problem-details.filter';
 export * from './utils/broker-api.client';
+export * from './utils/redis.client';

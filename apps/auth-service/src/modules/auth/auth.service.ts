@@ -2,11 +2,11 @@ import { Injectable, BadRequestException, UnauthorizedException, OnModuleInit } 
 import { PrismaService, MailService, hashPassword, verifyPassword, getRsaKeys } from '@app/shared';
 import { JwtService } from '@nestjs/jwt';
 import * as crypto from 'crypto';
-import Redis from 'ioredis';
+import { createRedisClient } from '@app/shared';
 
 @Injectable()
 export class AuthService implements OnModuleInit {
-  private redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
+  private redis = createRedisClient();
 
   constructor(
     private prisma: PrismaService,

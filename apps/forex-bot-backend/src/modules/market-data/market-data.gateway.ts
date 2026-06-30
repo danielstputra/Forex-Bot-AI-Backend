@@ -1,6 +1,6 @@
 import { WebSocketGateway, WebSocketServer, OnGatewayConnection, OnGatewayDisconnect } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
-import Redis from 'ioredis';
+import { createRedisClient } from '@app/shared';
 
 @WebSocketGateway({
   cors: {
@@ -12,7 +12,7 @@ export class MarketDataGateway implements OnGatewayConnection, OnGatewayDisconne
   server: Server;
 
   private intervalId: NodeJS.Timeout | null = null;
-  private redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
+  private redis = createRedisClient();
   private currentPrices: Record<string, number> = {
     'EUR/USD': 1.0852,
     'GBP/USD': 1.2724,

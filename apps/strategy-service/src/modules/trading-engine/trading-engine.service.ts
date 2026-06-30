@@ -1,11 +1,11 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService, BrokerApiClientFactory } from '@app/shared';
 import * as crypto from 'crypto';
-import Redis from 'ioredis';
+import { createRedisClient } from '@app/shared';
 
 @Injectable()
 export class TradingEngineService {
-  private redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
+  private redis = createRedisClient();
 
   constructor(private prisma: PrismaService) {}
 

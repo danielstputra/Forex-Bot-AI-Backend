@@ -1,7 +1,7 @@
 import { WebSocketGateway, WebSocketServer, OnGatewayConnection, OnGatewayDisconnect } from '@nestjs/websockets';
 import { OnModuleInit } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
-import Redis from 'ioredis';
+import { createRedisClient } from '@app/shared';
 
 @WebSocketGateway({
   cors: {
@@ -14,8 +14,8 @@ export class MarketDataGateway implements OnGatewayConnection, OnGatewayDisconne
 
   private intervalId: NodeJS.Timeout | null = null;
   private fetchIntervalId: NodeJS.Timeout | null = null;
-  private redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
-  private redisSub = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
+  private redis = createRedisClient();
+  private redisSub = createRedisClient();
   
   // Base rates initialized with realistic defaults, updated via public API
   private basePrices: Record<string, number> = {

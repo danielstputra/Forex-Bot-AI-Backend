@@ -1,11 +1,11 @@
 import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { PrismaService } from '@app/shared';
 import { TradingEngineService } from './trading-engine.service';
-import Redis from 'ioredis';
+import { createRedisClient } from '@app/shared';
 
 @Injectable()
 export class TradingBotWorker implements OnModuleInit, OnModuleDestroy {
-  private redisSub = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
+  private redisSub = createRedisClient();
   private priceHistory: Record<string, number[]> = {};
   private activeBotsCache: any[] = [];
   private lastCacheTime = 0;
