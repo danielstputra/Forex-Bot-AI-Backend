@@ -313,6 +313,67 @@ export class TradingBotWorker implements OnModuleInit, OnModuleDestroy {
       }
     }
 
+    // Candlestick Pattern Recognition Engine (Section Candlestick Recognition Engine)
+    let isBullishCandlePattern = false;
+    let isBearishCandlePattern = false;
+    const bars = this.priceHistory[pair];
+    if (bars.length >= 3) {
+      const current = bars[bars.length - 1];
+      const prev = bars[bars.length - 2];
+      
+      const currentBody = Math.abs(current.close - current.open);
+      const currentRange = current.high - current.low;
+      const prevBody = Math.abs(prev.close - prev.open);
+      
+      const isDoji = currentRange > 0 && currentBody <= 0.1 * currentRange;
+      const isBullishEngulfing = prev.close < prev.open && current.close > current.open && current.open <= prev.close && current.close >= prev.open;
+      const isBearishEngulfing = prev.close > prev.open && current.close < current.open && current.open >= prev.close && current.close <= prev.open;
+      
+      const lowerShadow = current.close > current.open ? current.open - current.low : current.close - current.low;
+      const upperShadow = current.close > current.open ? current.high - current.close : current.high - current.open;
+      const isHammer = currentRange > 0 && lowerShadow >= 2 * currentBody && upperShadow <= 0.2 * currentBody;
+      const isShootingStar = currentRange > 0 && upperShadow >= 2 * currentBody && lowerShadow <= 0.2 * currentBody;
+
+      if (isDoji || isBullishEngulfing || isHammer) {
+        isBullishCandlePattern = true;
+      }
+      if (isDoji || isBearishEngulfing || isShootingStar) {
+        isBearishCandlePattern = true;
+      }
+    }
+
+    // Smart Money Concept Engine (Section Smart Money Concept Engine)
+    let hasBullishInstitutionalZone = false;
+    let hasBearishInstitutionalZone = false;
+    if (bars.length >= 10) {
+      const last50 = bars.slice(-50);
+      for (let i = 2; i < last50.length; i++) {
+        // Bullish FVG
+        const fvgGapBullish = last50[i].low - last50[i-2].high;
+        if (fvgGapBullish > 0 && close >= last50[i-2].high && close <= last50[i].low) {
+          hasBullishInstitutionalZone = true;
+        }
+
+        // Bearish FVG
+        const fvgGapBearish = last50[i-2].low - last50[i].high;
+        if (fvgGapBearish > 0 && close >= last50[i].high && close <= last50[i-2].low) {
+          hasBearishInstitutionalZone = true;
+        }
+
+        // Bullish OB
+        const isBullishOB = last50[i-1].close < last50[i-1].open && last50[i].close > last50[i].open;
+        if (isBullishOB && close >= last50[i-1].low && close <= last50[i-1].high) {
+          hasBullishInstitutionalZone = true;
+        }
+
+        // Bearish OB
+        const isBearishOB = last50[i-1].close > last50[i-1].open && last50[i].close < last50[i].open;
+        if (isBearishOB && close >= last50[i-1].low && close <= last50[i-1].high) {
+          hasBearishInstitutionalZone = true;
+        }
+      }
+    }
+
     // 5. Evaluate Strategy Signals for each bot depending on its configuration
     for (const bot of activeBots) {
       // Volatility & Multi-Timeframe Trend Crossover Filters
@@ -335,10 +396,10 @@ export class TradingBotWorker implements OnModuleInit, OnModuleDestroy {
       const rsiBuyConfirm = rsi < 35 || isBullishRsiDivergence;
       const rsiSellConfirm = rsi > 65 || isBearishRsiDivergence;
 
-      // Confluence validation (EMA Crossover + Pullback + RSI & Stoch indicators)
-      if (rsiBuyConfirm && stoch.k < 20 && (!useEmaCross || isBullishCross) && isBuyPullback) {
+      // Confluence validation (EMA Crossover + Pullback + RSI & Stoch indicators + Candle + Institutional Zone)
+      if (rsiBuyConfirm && stoch.k < 20 && (!useEmaCross || isBullishCross) && isBuyPullback && isBullishCandlePattern && hasBullishInstitutionalZone) {
         signal = 'BUY';
-      } else if (rsiSellConfirm && stoch.k > 80 && (!useEmaCross || isBearishCross) && isSellPullback) {
+      } else if (rsiSellConfirm && stoch.k > 80 && (!useEmaCross || isBearishCross) && isSellPullback && isBearishCandlePattern && hasBearishInstitutionalZone) {
         signal = 'SELL';
       }
 
@@ -358,7 +419,11 @@ export class TradingBotWorker implements OnModuleInit, OnModuleDestroy {
           isSellPullback,
           rsiBuyConfirm,
           rsiSellConfirm,
-          closePrices
+          closePrices,
+          hasBullishInstitutionalZone,
+          hasBearishInstitutionalZone,
+          isBullishRsiDivergence,
+          isBearishRsiDivergence
         );
       }
     }
@@ -379,7 +444,11 @@ export class TradingBotWorker implements OnModuleInit, OnModuleDestroy {
     isSellPullback: boolean,
     rsiBuyConfirm: boolean,
     rsiSellConfirm: boolean,
-    closePrices: number[]
+    closePrices: number[],
+    hasBullishOB: boolean,
+    hasBearishOB: boolean,
+    isBullishDivergence: boolean,
+    isBearishDivergence: boolean
   ) {
     try {
       const multiplier = pair === 'USD/JPY' ? 100 : 10000;
@@ -412,37 +481,39 @@ export class TradingBotWorker implements OnModuleInit, OnModuleDestroy {
       });
       const isNewsSafe = !recentNews;
 
-      // 4. Entry Decision Score calculation (Requires score >= 80)
+      // 4. Entry Scoring (Section Entry Scoring - V3.0 Weights Table)
       let score = 0;
       
-      // Trend Align (20 pts)
+      // Macro Trend (20 pts)
       const trendAligned = !useEmaCross || (signal === 'BUY' && isBullishCross) || (signal === 'SELL' && isBearishCross);
       if (trendAligned) score += 20;
 
-      // Pullback Micro Structure (15 pts)
+      // Market Structure - Pullbacks (15 pts)
       const isPullback = (signal === 'BUY' && isBuyPullback) || (signal === 'SELL' && isSellPullback);
       if (isPullback) score += 15;
 
-      // AI Confidence Score (20 pts)
-      score += 20; // Simulated AI engine score based on indicator confluence
+      // Order Block (10 pts)
+      const obSupported = signal === 'BUY' ? hasBullishOB : hasBearishOB;
+      if (obSupported) score += 10;
 
-      // Volume / Volatility ATR Rising (10 pts)
-      if (atr !== null && atr > 0) score += 10;
+      // Liquidity Sweep / Divergence (10 pts)
+      const liqSupported = signal === 'BUY' ? isBullishDivergence : isBearishDivergence;
+      if (liqSupported) score += 10;
 
-      // RSI Signal confirmation (10 pts)
+      // RSI Momentum (10 pts)
       const rsiConfirmed = (signal === 'BUY' && rsiBuyConfirm) || (signal === 'SELL' && rsiSellConfirm);
       if (rsiConfirmed) score += 10;
 
-      // ATR Volatility Normal Range (10 pts)
-      score += 10;
+      // ATR Volatility status (5 pts)
+      if (atr !== null && atr > 0) score += 5;
 
-      // Valid Session check (5 pts)
+      // AI Prediction (20 pts)
+      score += 20; // Default simulated AI inference probability score
+
+      // Session (5 pts)
       if (isSessionOk) score += 5;
 
-      // Safe Spread check (5 pts)
-      if (isSpreadOk) score += 5;
-
-      // Fundamental News Safe (5 pts)
+      // News (5 pts)
       if (isNewsSafe) score += 5;
 
       // Volatility Engine (Section Volatility Engine)
