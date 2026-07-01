@@ -2,6 +2,42 @@ import { WebSocketGateway, WebSocketServer, OnGatewayConnection, OnGatewayDiscon
 import { OnModuleInit } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import { createRedisClient } from '@app/shared';
+import * as https from 'https';
+
+async function httpsGetJson(url: string, headers: Record<string, string> = {}): Promise<any> {
+  return new Promise((resolve, reject) => {
+    const parsedUrl = new URL(url);
+    const options: https.RequestOptions = {
+      method: 'GET',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        ...headers
+      },
+      timeout: 5000,
+    };
+    const req = https.request(parsedUrl, options, (res) => {
+      if (res.statusCode && (res.statusCode < 200 || res.statusCode >= 300)) {
+        reject(new Error(`HTTP status code ${res.statusCode}`));
+        return;
+      }
+      let data = '';
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => {
+        try {
+          resolve(JSON.parse(data));
+        } catch (e) {
+          reject(e);
+        }
+      });
+    });
+    req.on('error', (err) => { reject(err); });
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error('Request timeout'));
+    });
+    req.end();
+  });
+}
 
 @WebSocketGateway({
   cors: {
@@ -88,7 +124,7 @@ export class MarketDataGateway implements OnGatewayConnection, OnGatewayDisconne
    */
   private async fetchRealtimeTicks() {
     try {
-      let response;
+      let json: any;
       const headersList: Record<string, string>[] = [
         {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
@@ -106,26 +142,20 @@ export class MarketDataGateway implements OnGatewayConnection, OnGatewayDisconne
 
       // Try query1 first
       try {
-        response = await fetch(
+        json = await httpsGetJson(
           'https://query1.finance.yahoo.com/v7/finance/quote?symbols=EURUSD=X,GBPUSD=X,USDJPY=X,AUDUSD=X',
-          {
-            headers: headersList[0],
-            signal: AbortSignal.timeout(3000),
-          }
+          headersList[0]
         );
       } catch (e1) {
         console.warn('[MarketData] Query1 failed, trying Query2 fallback...');
       }
 
       // Try query2 if query1 failed or returned non-ok status
-      if (!response || !response.ok) {
+      if (!json) {
         try {
-          response = await fetch(
+          json = await httpsGetJson(
             'https://query2.finance.yahoo.com/v7/finance/quote?symbols=EURUSD=X,GBPUSD=X,USDJPY=X,AUDUSD=X',
-            {
-              headers: headersList[1],
-              signal: AbortSignal.timeout(3000),
-            }
+            headersList[1]
           );
         } catch (e2) {
           console.warn('[MarketData] Query2 failed, trying Frankfurter API fallback...');
@@ -133,62 +163,57 @@ export class MarketDataGateway implements OnGatewayConnection, OnGatewayDisconne
       }
 
       // Try Frankfurter API if Yahoo Finance completely failed
-      if (!response || !response.ok) {
+      if (!json) {
         try {
-          const frankResponse = await fetch(
-            'https://api.frankfurter.app/latest?from=USD&to=EUR,GBP,JPY,AUD',
-            { signal: AbortSignal.timeout(3000) }
+          const data = await httpsGetJson(
+            'https://api.frankfurter.app/latest?from=USD&to=EUR,GBP,JPY,AUD'
           );
-          if (frankResponse.ok) {
-            const data = await frankResponse.json();
-            const rates = data.rates;
-            
-            // Map USD rates back to pairs
-            const eurUsd = parseFloat((1 / rates.EUR).toFixed(5));
-            const gbpUsd = parseFloat((1 / rates.GBP).toFixed(5));
-            const usdJpy = parseFloat((rates.JPY).toFixed(3));
-            const audUsd = parseFloat((1 / rates.AUD).toFixed(5));
+          const rates = data.rates;
+          
+          // Map USD rates back to pairs
+          const eurUsd = parseFloat((1 / rates.EUR).toFixed(5));
+          const gbpUsd = parseFloat((1 / rates.GBP).toFixed(5));
+          const usdJpy = parseFloat((rates.JPY).toFixed(3));
+          const audUsd = parseFloat((1 / rates.AUD).toFixed(5));
 
-            this.currentPrices['EUR/USD'] = eurUsd;
-            this.currentPrices['GBP/USD'] = gbpUsd;
-            this.currentPrices['USD/JPY'] = usdJpy;
-            this.currentPrices['AUD/USD'] = audUsd;
+          this.currentPrices['EUR/USD'] = eurUsd;
+          this.currentPrices['GBP/USD'] = gbpUsd;
+          this.currentPrices['USD/JPY'] = usdJpy;
+          this.currentPrices['AUD/USD'] = audUsd;
 
-            const ticks = [
-              { pair: 'EUR/USD', price: eurUsd },
-              { pair: 'GBP/USD', price: gbpUsd },
-              { pair: 'USD/JPY', price: usdJpy },
-              { pair: 'AUD/USD', price: audUsd }
-            ].map(item => ({
-              pair: item.pair,
-              time: Math.floor(Date.now() / 1000),
-              open: item.price,
-              high: item.price,
-              low: item.price,
-              close: item.price,
-              volume: 100
-            }));
+          const ticks = [
+            { pair: 'EUR/USD', price: eurUsd },
+            { pair: 'GBP/USD', price: gbpUsd },
+            { pair: 'USD/JPY', price: usdJpy },
+            { pair: 'AUD/USD', price: audUsd }
+          ].map(item => ({
+            pair: item.pair,
+            time: Math.floor(Date.now() / 1000),
+            open: item.price,
+            high: item.price,
+            low: item.price,
+            close: item.price,
+            volume: 100
+          }));
 
-            // Broadcast to other microservices via Redis Pub/Sub
-            this.redis.publish('market:ticks', JSON.stringify(ticks)).catch((err) => {
-              console.error('[MarketData] Failed to publish ticks to Redis:', err.message);
-            });
+          // Broadcast to other microservices via Redis Pub/Sub
+          this.redis.publish('market:ticks', JSON.stringify(ticks)).catch((err) => {
+            console.error('[MarketData] Failed to publish ticks to Redis:', err.message);
+          });
 
-            // Broadcast to WebSocket clients
-            if (this.server) {
-              this.server.emit('tick', ticks);
-            }
-            console.log('[MarketData] Successfully fallback-fetched prices from Frankfurter API.');
-            return;
+          // Broadcast to WebSocket clients
+          if (this.server) {
+            this.server.emit('tick', ticks);
           }
+          console.log('[MarketData] Successfully fallback-fetched prices from Frankfurter API.');
+          return;
         } catch (frankErr: any) {
           console.warn('[MarketData] Frankfurter API fallback also failed:', frankErr.message);
         }
       }
 
-      if (!response || !response.ok) throw new Error('Yahoo Finance and Frankfurter mirrors failed');
+      if (!json) throw new Error('Yahoo Finance and Frankfurter mirrors failed');
 
-      const json = await response.json();
       const results = json.quoteResponse?.result || [];
 
       const pairMap: Record<string, string> = {

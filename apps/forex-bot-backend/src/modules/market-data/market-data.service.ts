@@ -1,4 +1,40 @@
 import { Injectable, Logger } from '@nestjs/common';
+import * as https from 'https';
+
+async function httpsGetJson(url: string, headers: Record<string, string> = {}): Promise<any> {
+  return new Promise((resolve, reject) => {
+    const parsedUrl = new URL(url);
+    const options: https.RequestOptions = {
+      method: 'GET',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        ...headers
+      },
+      timeout: 5000,
+    };
+    const req = https.request(parsedUrl, options, (res) => {
+      if (res.statusCode && (res.statusCode < 200 || res.statusCode >= 300)) {
+        reject(new Error(`HTTP status code ${res.statusCode}`));
+        return;
+      }
+      let data = '';
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => {
+        try {
+          resolve(JSON.parse(data));
+        } catch (e) {
+          reject(e);
+        }
+      });
+    });
+    req.on('error', (err) => { reject(err); });
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error('Request timeout'));
+    });
+    req.end();
+  });
+}
 
 @Injectable()
 export class MarketDataService {
@@ -17,30 +53,24 @@ export class MarketDataService {
     }
 
     try {
-      let response;
+      let json: any;
       try {
-        response = await fetch(
+        json = await httpsGetJson(
           `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?range=${range}&interval=${interval}`,
           {
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            },
-            signal: AbortSignal.timeout(5000),
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
           }
         );
       } catch (e1: any) {
         this.logger.warn(`Query1 failed for historical data of ${pair}: ${e1.message}`);
       }
 
-      if (!response || !response.ok) {
+      if (!json) {
         try {
-          response = await fetch(
+          json = await httpsGetJson(
             `https://query2.finance.yahoo.com/v8/finance/chart/${symbol}?range=${range}&interval=${interval}`,
             {
-              headers: {
-                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2.1 Safari/605.1.15',
-              },
-              signal: AbortSignal.timeout(5000),
+              'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2.1 Safari/605.1.15',
             }
           );
         } catch (e2: any) {
@@ -48,11 +78,10 @@ export class MarketDataService {
         }
       }
 
-      if (!response || !response.ok) {
+      if (!json) {
         throw new Error(`Failed to fetch from Yahoo Finance mirrors`);
       }
 
-      const json = await response.json();
       const result = json.chart?.result?.[0];
 
       if (!result) {
