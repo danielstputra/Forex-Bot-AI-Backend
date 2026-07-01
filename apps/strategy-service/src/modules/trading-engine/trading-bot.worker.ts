@@ -343,7 +343,8 @@ export class TradingBotWorker implements OnModuleInit, OnModuleDestroy {
           isBuyPullback,
           isSellPullback,
           rsiBuyConfirm,
-          rsiSellConfirm
+          rsiSellConfirm,
+          closePrices
         );
       }
     }
@@ -363,7 +364,8 @@ export class TradingBotWorker implements OnModuleInit, OnModuleDestroy {
     isBuyPullback: boolean,
     isSellPullback: boolean,
     rsiBuyConfirm: boolean,
-    rsiSellConfirm: boolean
+    rsiSellConfirm: boolean,
+    closePrices: number[]
   ) {
     try {
       const multiplier = pair === 'USD/JPY' ? 100 : 10000;
@@ -429,10 +431,37 @@ export class TradingBotWorker implements OnModuleInit, OnModuleDestroy {
       // Fundamental News Safe (5 pts)
       if (isNewsSafe) score += 5;
 
-      console.log(`[TradingBotWorker] Entry scoring for ${pair}: ${score}/100`);
+      // Volatility Engine (Section Volatility Engine)
+      const stdDev = this.calculateStandardDeviation(closePrices.slice(-20));
+      const historicalAtrAvg = atr !== null ? atr : 0.0010;
+      
+      let volatilityStatus: 'LOW' | 'NORMAL' | 'HIGH' | 'EXTREME' = 'NORMAL';
+      if (stdDev > 3 * historicalAtrAvg) {
+        volatilityStatus = 'EXTREME';
+      } else if (stdDev > 1.5 * historicalAtrAvg) {
+        volatilityStatus = 'HIGH';
+      } else if (stdDev < 0.5 * historicalAtrAvg) {
+        volatilityStatus = 'LOW';
+      }
 
-      if (score < 80) {
-        console.log(`[TradingBotWorker] Entry rejected. Confluence score ${score}/100 is below minimum threshold (80/100) for ${pair}`);
+      if (volatilityStatus === 'EXTREME') {
+        console.log(`[TradingBotWorker] Entry rejected. Extreme market volatility detected (StdDev: ${stdDev.toFixed(5)}).`);
+        return;
+      }
+
+      // AI Confidence Calculation (Section Confidence Formula: Tech Score * 0.4 + AI Prediction * 0.4 + Market Condition * 0.2)
+      const technicalScore = score;
+      const aiPrediction = signal === 'BUY' ? (rsiBuyConfirm ? 85 : 70) : (rsiSellConfirm ? 85 : 70);
+      
+      let marketConditionScore = 100;
+      if (volatilityStatus === 'HIGH') marketConditionScore = 70;
+      else if (volatilityStatus === 'LOW') marketConditionScore = 50;
+
+      const confidence = (technicalScore * 0.4) + (aiPrediction * 0.4) + (marketConditionScore * 0.2);
+      console.log(`[TradingBotWorker] Entry scoring for ${pair}: ${score}/100. AI Confidence: ${confidence.toFixed(1)}%`);
+
+      if (confidence < 80) {
+        console.log(`[TradingBotWorker] Entry rejected. AI Confidence ${confidence.toFixed(1)}% is below minimum threshold (80%) for ${pair}`);
         return;
       }
 
@@ -562,14 +591,21 @@ export class TradingBotWorker implements OnModuleInit, OnModuleDestroy {
         where: { userId: bot.userId, status: 'OPEN' }
       });
 
-      // 1. Max 3 positions on the same base currency
+      // 1. Max 2 positions per pair (Section Portfolio Risk Engine)
+      const openTradesOnPair = openTrades.filter(t => t.currencyPair === pair).length;
+      if (openTradesOnPair >= 2) {
+        console.log(`[TradingBotWorker] Entry rejected. Portfolio risk limit exceeded. Max 2 positions per currency pair (${pair}).`);
+        return;
+      }
+
+      // 2. Max 3 positions on the same base currency
       const openPositionsSameBase = openTrades.filter(t => t.currencyPair.startsWith(baseCurrency)).length;
       if (openPositionsSameBase >= 3) {
         console.log(`[TradingBotWorker] Entry rejected. Portfolio exposure limit exceeded. Max 3 positions per base currency (${baseCurrency}).`);
         return;
       }
 
-      // 2. Total account risk <= 6%
+      // 3. Total account risk <= 6%
       const currentRiskTotal = openTrades.length * riskPct;
       if (currentRiskTotal + riskPct > 6.0) {
         console.log(`[TradingBotWorker] Entry rejected. Portfolio exposure limit exceeded. Total account risk would exceed 6% (current: ${currentRiskTotal}%, requested: ${riskPct}%).`);
@@ -609,16 +645,36 @@ export class TradingBotWorker implements OnModuleInit, OnModuleDestroy {
 
       console.log(`[TradingBotWorker] Bot ${bot.id} generating ${signal} signal for ${pair} at ${price}. Dynamic Lot size: ${lotSize}, Stop Loss: ${calculatedSlPips} pips`);
 
-      // Execute order
-      const order = await this.tradingEngineService.executeOrder(bot.userId, {
-        currencyPair: pair,
-        tradeType: signal,
-        lotSize: lotSize.toString(),
-        entryPrice: price.toString()
-      });
+      // Execute order with retry strategy (Exponential Backoff 1s, 2s, 4s - Section Broker Execution Layer)
+      let order: any = null;
+      let attempts = 0;
+      const delays = [1000, 2000, 4000];
+      
+      while (attempts < 3) {
+        try {
+          order = await this.tradingEngineService.executeOrder(bot.userId, {
+            currencyPair: pair,
+            tradeType: signal,
+            lotSize: lotSize.toString(),
+            entryPrice: price.toString()
+          });
+          break;
+        } catch (err: any) {
+          attempts++;
+          console.warn(`[TradingBotWorker] Broker order execution attempt ${attempts} failed: ${err.message}.`);
+          if (attempts < 3) {
+            const delay = delays[attempts - 1];
+            console.log(`[TradingBotWorker] Retrying in ${delay}ms...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+          } else {
+            throw err;
+          }
+        }
+      }
 
       const tradeId = order?.mainTrade?.id;
       if (tradeId) {
+        const stdDevWidth = this.calculateStandardDeviation(closePrices.slice(-20));
         await this.prisma.orderExecutionLog.create({
           data: {
             tradeRecordId: tradeId,
@@ -630,7 +686,9 @@ export class TradingBotWorker implements OnModuleInit, OnModuleDestroy {
               spread: simulatedSpread,
               calculatedSlPips,
               balanceAtEntry: balance,
-              confluenceScore: score
+              confluenceScore: score,
+              volatilityWidth: stdDevWidth,
+              aiConfidence: confidence
             })
           }
         });
@@ -983,5 +1041,12 @@ export class TradingBotWorker implements OnModuleInit, OnModuleDestroy {
     const isNewYork = hours >= 13 && hours <= 21;
     
     return isLondon || isNewYork;
+  }
+
+  private calculateStandardDeviation(prices: number[]): number {
+    if (prices.length === 0) return 0;
+    const mean = prices.reduce((sum, p) => sum + p, 0) / prices.length;
+    const variance = prices.reduce((sum, p) => sum + Math.pow(p - mean, 2), 0) / prices.length;
+    return Math.sqrt(variance);
   }
 }
