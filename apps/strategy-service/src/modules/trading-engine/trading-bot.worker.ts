@@ -108,11 +108,12 @@ export class TradingBotWorker implements OnModuleInit, OnModuleDestroy {
     const rsi = this.calculateRSI(closePrices, 14);
     const ema50 = this.calculateEMA(closePrices, 50);
     const ema200 = this.calculateEMA(closePrices, 200);
+    const stoch = this.calculateStochastic(this.priceHistory[pair], 14);
 
     // 4. Handle Position Closures (TP 1 Scale-Out, ATR Trailing Stops, TP 2, and SL)
     await this.checkPositionClosures(pair, close, atr);
 
-    if (rsi === null || ema50 === null || ema200 === null) return;
+    if (rsi === null || ema50 === null || ema200 === null || stoch === null) return;
 
     // 5. Evaluate Strategy Signals for each bot depending on its configuration
     for (const bot of activeBots) {
@@ -133,21 +134,55 @@ export class TradingBotWorker implements OnModuleInit, OnModuleDestroy {
 
       let signal: 'BUY' | 'SELL' | null = null;
 
-      // Confluence validation
-      if (rsi < 35 && (!useEmaCross || isBullishCross) && isBuyPullback) {
+      // Confluence validation (EMA Crossover + Pullback + RSI/Stoch indicators)
+      if (rsi < 35 && stoch.k < 20 && (!useEmaCross || isBullishCross) && isBuyPullback) {
         signal = 'BUY';
-      } else if (rsi > 65 && (!useEmaCross || isBearishCross) && isSellPullback) {
+      } else if (rsi > 65 && stoch.k > 80 && (!useEmaCross || isBearishCross) && isSellPullback) {
         signal = 'SELL';
       }
 
       if (signal) {
-        await this.evaluateAndExecute(bot, pair, close, signal, atr);
+        await this.evaluateAndExecute(bot, pair, close, signal, atr, rsi, stoch);
       }
     }
   }
 
-  private async evaluateAndExecute(bot: any, pair: string, price: number, signal: 'BUY' | 'SELL', atr: number | null) {
+  private async evaluateAndExecute(
+    bot: any,
+    pair: string,
+    price: number,
+    signal: 'BUY' | 'SELL',
+    atr: number | null,
+    rsi: number,
+    stoch: { k: number; d: number }
+  ) {
     try {
+      // Fundamental News Filter (Avoid entry within 30 minutes of High Impact Economic Events)
+      if (bot.newsFilterOn) {
+        const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000);
+        const thirtyMinutesLater = new Date(Date.now() + 30 * 60 * 1000);
+        const baseCurrency = pair.split('/')[0];
+        const quoteCurrency = pair.split('/')[1];
+
+        const recentNews = await this.prisma.economicEvent.findFirst({
+          where: {
+            impact: 'HIGH',
+            currency: {
+              in: [baseCurrency, quoteCurrency, 'USD']
+            },
+            eventDate: {
+              gte: thirtyMinutesAgo,
+              lte: thirtyMinutesLater
+            }
+          }
+        });
+
+        if (recentNews) {
+          console.log(`[TradingBotWorker] Entry avoided for ${pair} due to High Impact News: ${recentNews.event}`);
+          return;
+        }
+      }
+
       // Kill-Switch Check 1: Daily Drawdown Limit (5%)
       const startOfDay = new Date();
       startOfDay.setHours(0, 0, 0, 0);
@@ -228,15 +263,44 @@ export class TradingBotWorker implements OnModuleInit, OnModuleDestroy {
       dynamicLot = dynamicLot * (bot.lotMultiplier || 1.0);
       const lotSize = Math.max(0.01, Math.min(5.0, parseFloat(dynamicLot.toFixed(2))));
 
+      // Margin validation: leverage 1:500, margin requirement = $200 per lot
+      const openTrades = await this.prisma.tradeRecord.findMany({
+        where: { userId: bot.userId, status: 'OPEN' }
+      });
+      const currentUsedMargin = openTrades.reduce((sum, t) => sum + (t.lotSize * 200), 0);
+      const requiredMargin = lotSize * 200;
+      if (currentUsedMargin + requiredMargin > balance) {
+        console.log(`[TradingBotWorker] Entry rejected. Insufficient margin for user ${bot.userId}. Required: $${requiredMargin}, Available: $${(balance - currentUsedMargin).toFixed(2)}`);
+        return;
+      }
+
       console.log(`[TradingBotWorker] Bot ${bot.id} generating ${signal} signal for ${pair} at ${price}. Dynamic Lot size: ${lotSize}, Stop Loss: ${calculatedSlPips} pips`);
 
       // Execute order
-      await this.tradingEngineService.executeOrder(bot.userId, {
+      const order = await this.tradingEngineService.executeOrder(bot.userId, {
         currencyPair: pair,
         tradeType: signal,
         lotSize: lotSize.toString(),
         entryPrice: price.toString()
       });
+
+      const tradeId = order?.mainTrade?.id;
+      if (tradeId) {
+        await this.prisma.orderExecutionLog.create({
+          data: {
+            tradeRecordId: tradeId,
+            actionType: 'ORDER_SUBMITTED',
+            rawPayload: JSON.stringify({
+              rsi,
+              stoch,
+              atr,
+              spread: simulatedSpread,
+              calculatedSlPips,
+              balanceAtEntry: balance
+            })
+          }
+        });
+      }
 
     } catch (err: any) {
       console.error(`[TradingBotWorker] Error executing trade for bot ${bot.id}:`, err.message);
@@ -490,5 +554,27 @@ export class TradingBotWorker implements OnModuleInit, OnModuleDestroy {
       atr = trValues[i] * k + atr * (1 - k);
     }
     return atr;
+  }
+
+  private calculateStochastic(bars: BarData[], period: number = 14): { k: number; d: number } | null {
+    if (!bars || bars.length < period + 3) return null;
+
+    const kValues: number[] = [];
+    for (let i = bars.length - 5; i < bars.length; i++) {
+      const window = bars.slice(i - period + 1, i + 1);
+      const close = bars[i].close;
+      const low = Math.min(...window.map(b => b.low));
+      const high = Math.max(...window.map(b => b.high));
+      
+      const k = high === low ? 50 : ((close - low) / (high - low)) * 100;
+      kValues.push(k);
+    }
+
+    const currentK = kValues.slice(-3).reduce((sum, v) => sum + v, 0) / 3;
+    const previousK = kValues.slice(-4, -1).reduce((sum, v) => sum + v, 0) / 3;
+    const oldestK = kValues.slice(-5, -2).reduce((sum, v) => sum + v, 0) / 3;
+    const currentD = (currentK + previousK + oldestK) / 3;
+
+    return { k: currentK, d: currentD };
   }
 }
