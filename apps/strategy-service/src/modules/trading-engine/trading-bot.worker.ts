@@ -73,24 +73,32 @@ export class TradingBotWorker implements OnModuleInit, OnModuleDestroy {
     const activeBots = await this.getActiveBots();
     if (activeBots.length === 0) return;
 
-    // 3. Calculate RSI (14 period)
+    // 3. Calculate indicators
     const rsi = this.calculateRSI(this.priceHistory[pair], 14);
+    const emaFast = this.calculateEMA(this.priceHistory[pair], 9);
+    const emaSlow = this.calculateEMA(this.priceHistory[pair], 21);
 
     // 4. Handle Position Closures (Take Profit & Stop Loss)
     await this.checkPositionClosures(pair, close);
 
     if (rsi === null) return;
 
-    // 5. Evaluate Strategy Signals (RSI Overbought/Oversold)
-    let signal: 'BUY' | 'SELL' | null = null;
-    if (rsi < 30) {
-      signal = 'BUY';
-    } else if (rsi > 70) {
-      signal = 'SELL';
-    }
+    // 5. Evaluate Strategy Signals for each bot depending on its configuration
+    for (const bot of activeBots) {
+      let signal: 'BUY' | 'SELL' | null = null;
+      
+      const useEmaCross = bot.maCrossover !== 'None';
+      const isBullishCross = emaFast !== null && emaSlow !== null ? emaFast > emaSlow : true;
+      const isBearishCross = emaFast !== null && emaSlow !== null ? emaFast < emaSlow : true;
 
-    if (signal) {
-      for (const bot of activeBots) {
+      // Smart Dual-Factor Convergence Logic (EMA Cross Confirmation + RSI oversold/overbought checks)
+      if (rsi < 35 && (!useEmaCross || isBullishCross)) {
+        signal = 'BUY';
+      } else if (rsi > 65 && (!useEmaCross || isBearishCross)) {
+        signal = 'SELL';
+      }
+
+      if (signal) {
         await this.evaluateAndExecute(bot, pair, close, signal);
       }
     }
@@ -132,20 +140,31 @@ export class TradingBotWorker implements OnModuleInit, OnModuleDestroy {
   private async checkPositionClosures(pair: string, currentPrice: number) {
     try {
       const openTrades = await this.prisma.tradeRecord.findMany({
-        where: { currencyPair: pair, status: 'OPEN' }
+        where: { currencyPair: pair, status: 'OPEN' },
+        include: {
+          user: {
+            include: {
+              botConfigs: {
+                where: { isActive: true }
+              }
+            }
+          }
+        }
       });
 
       for (const trade of openTrades) {
+        const activeBot = trade.user?.botConfigs?.[0];
+        
+        // Dynamically read customized TP/SL levels, or default
+        const tp = activeBot?.takeProfitPips || 50;
+        const sl = -(activeBot?.stopLossPips || 30);
+
         const pipsDiff = trade.tradeType === 'BUY'
           ? currentPrice - trade.entryPrice
           : trade.entryPrice - currentPrice;
 
         const multiplier = pair === 'USD/JPY' ? 100 : 10000;
         const pips = pipsDiff * multiplier;
-
-        // Take Profit (+30 pips) or Stop Loss (-15 pips)
-        const tp = 30;
-        const sl = -15;
 
         if (pips >= tp || pips <= sl) {
           const reason = pips >= tp ? 'TP' : 'SL';
@@ -197,5 +216,18 @@ export class TradingBotWorker implements OnModuleInit, OnModuleDestroy {
     if (losses === 0) return 100;
     const rs = gains / losses;
     return 100 - 100 / (1 + rs);
+  }
+
+  private calculateEMA(prices: number[], period: number): number | null {
+    if (!prices || prices.length < period) return null;
+    
+    const k = 2 / (period + 1);
+    let ema = prices.slice(0, period).reduce((sum, p) => sum + p, 0) / period;
+    
+    for (let i = period; i < prices.length; i++) {
+      ema = prices[i] * k + ema * (1 - k);
+    }
+    
+    return ema;
   }
 }
