@@ -102,6 +102,111 @@ export class TradingBotWorker implements OnModuleInit, OnModuleDestroy {
     const activeBots = await this.getActiveBots();
     if (activeBots.length === 0) return;
 
+    // Check Daily Drawdown and handle Emergency Kill-Switch for active bots
+    for (const bot of activeBots) {
+      const startOfDay = new Date();
+      startOfDay.setHours(0, 0, 0, 0);
+
+      const closedToday = await this.prisma.tradeRecord.findMany({
+        where: {
+          userId: bot.userId,
+          status: 'CLOSED',
+          closedAt: { gte: startOfDay }
+        }
+      });
+
+      let totalLossToday = 0;
+      let totalProfitToday = 0;
+      for (const t of closedToday) {
+        const profit = t.profitAmount || 0;
+        if (profit < 0) {
+          totalLossToday += Math.abs(profit);
+        } else {
+          totalProfitToday += profit;
+        }
+      }
+
+      const openTrades = await this.prisma.tradeRecord.findMany({
+        where: { userId: bot.userId, status: 'OPEN' }
+      });
+
+      let floatingPnL = 0;
+      for (const trade of openTrades) {
+        const currentPrice = this.priceHistory[trade.currencyPair]?.slice(-1)[0]?.close || trade.entryPrice;
+        const pipsDiff = trade.tradeType === 'BUY'
+          ? currentPrice - trade.entryPrice
+          : trade.entryPrice - currentPrice;
+        const pipValueMultiplier = trade.currencyPair === 'USD/JPY' ? 1000 : 100000;
+        floatingPnL += pipsDiff * trade.lotSize * pipValueMultiplier;
+      }
+
+      const wallet = await this.prisma.userWallet.findFirst({ where: { userId: bot.userId, currency: 'USD' } });
+      const balance = wallet?.balance || 1000;
+      const startingBalance = balance - (totalProfitToday - totalLossToday);
+
+      const currentDayLoss = totalLossToday - floatingPnL;
+      if (currentDayLoss >= startingBalance * 0.05) {
+        console.warn(`[TradingBotWorker] EMERGENCY KILL-SWITCH: Daily drawdown limit exceeded for user ${bot.userId}. Total daily loss (realized + floating): $${currentDayLoss.toFixed(2)}`);
+        
+        // Deactivate bot config
+        await this.prisma.botConfig.update({
+          where: { id: bot.id },
+          data: { isActive: false }
+        });
+
+        // Close all active positions
+        for (const trade of openTrades) {
+          const currentPrice = this.priceHistory[trade.currencyPair]?.slice(-1)[0]?.close || trade.entryPrice;
+          const pipsDiff = trade.tradeType === 'BUY'
+            ? currentPrice - trade.entryPrice
+            : trade.entryPrice - currentPrice;
+          const pipValueMultiplier = trade.currencyPair === 'USD/JPY' ? 1000 : 100000;
+          const profitAmount = parseFloat((pipsDiff * trade.lotSize * pipValueMultiplier).toFixed(2));
+
+          await this.prisma.$transaction(async (tx) => {
+            await tx.tradeRecord.update({
+              where: { id: trade.id },
+              data: {
+                closePrice: currentPrice,
+                closedAt: new Date(),
+                profitAmount,
+                status: 'CLOSED'
+              }
+            });
+
+            await tx.orderExecutionLog.create({
+              data: {
+                tradeRecordId: trade.id,
+                actionType: 'ORDER_CLOSED',
+                rawPayload: JSON.stringify({ closePrice: currentPrice, profitAmount, closedAt: new Date(), reason: 'EMERGENCY_KILL_SWITCH_DRAWDOWN' })
+              }
+            });
+
+            const userWallet = await tx.userWallet.findFirst({ where: { userId: trade.userId, currency: 'USD' } });
+            if (userWallet) {
+              await tx.userWallet.update({
+                where: { id: userWallet.id },
+                data: {
+                  balance: parseFloat((userWallet.balance + profitAmount).toFixed(2))
+                }
+              });
+            }
+          });
+        }
+
+        // Write Audit Log
+        await this.prisma.auditLog.create({
+          data: {
+            userId: bot.userId,
+            action: 'STOP_BOT',
+            ipAddress: '127.0.0.1',
+            details: `EMERGENCY KILL-SWITCH triggered. Daily drawdown limit exceeded. Closed ${openTrades.length} positions.`,
+            status: 'SUCCESS'
+          }
+        });
+      }
+    }
+
     // 3. Calculate indicators from bars history
     const atr = this.calculateATR(this.priceHistory[pair], 14);
     const closePrices = this.priceHistory[pair].map(b => b.close);
@@ -114,6 +219,23 @@ export class TradingBotWorker implements OnModuleInit, OnModuleDestroy {
     await this.checkPositionClosures(pair, close, atr);
 
     if (rsi === null || ema50 === null || ema200 === null || stoch === null) return;
+
+    // RSI Divergence check
+    const len = closePrices.length;
+    let isBullishRsiDivergence = false;
+    let isBearishRsiDivergence = false;
+    if (len >= 3) {
+      const prevClose = closePrices[len - 2];
+      const prevRsi = this.calculateRSI(closePrices.slice(0, len - 1), 14);
+      if (prevRsi !== null) {
+        if (close < prevClose && rsi > prevRsi) {
+          isBullishRsiDivergence = true;
+        }
+        if (close > prevClose && rsi < prevRsi) {
+          isBearishRsiDivergence = true;
+        }
+      }
+    }
 
     // 5. Evaluate Strategy Signals for each bot depending on its configuration
     for (const bot of activeBots) {
@@ -134,10 +256,13 @@ export class TradingBotWorker implements OnModuleInit, OnModuleDestroy {
 
       let signal: 'BUY' | 'SELL' | null = null;
 
-      // Confluence validation (EMA Crossover + Pullback + RSI/Stoch indicators)
-      if (rsi < 35 && stoch.k < 20 && (!useEmaCross || isBullishCross) && isBuyPullback) {
+      const rsiBuyConfirm = rsi < 35 || isBullishRsiDivergence;
+      const rsiSellConfirm = rsi > 65 || isBearishRsiDivergence;
+
+      // Confluence validation (EMA Crossover + Pullback + RSI & Stoch indicators)
+      if (rsiBuyConfirm && stoch.k < 20 && (!useEmaCross || isBullishCross) && isBuyPullback) {
         signal = 'BUY';
-      } else if (rsi > 65 && stoch.k > 80 && (!useEmaCross || isBearishCross) && isSellPullback) {
+      } else if (rsiSellConfirm && stoch.k > 80 && (!useEmaCross || isBearishCross) && isSellPullback) {
         signal = 'SELL';
       }
 
