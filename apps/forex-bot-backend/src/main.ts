@@ -58,10 +58,10 @@ async function bootstrap() {
 
   // 5. Swagger Setup
   const config = new DocumentBuilder()
-    .setTitle('Ultimate Enterprise OTT & IPTV Engine API (Forex Bot AI)')
+    .setTitle('Forex Bot AI - Enterprise Trading Platform API')
     .setDescription(`
 **Sistem Infrastruktur Backend B2B2C Skala Enterprise**
-Dokumentasi resmi untuk seluruh endpoint API yang mencakup manajemen Multi-Tenant, Keamanan Militer (E2EE, HMAC), Subscription, Real-Time Market Data, serta Integrasi Finansial.
+Dokumentasi resmi untuk seluruh endpoint API yang mencakup manajemen Multi-Tenant, Keamanan Sistem, Algoritma Trading AI (Automated Trading), Subscription, Real-Time Market Data, serta Integrasi Finansial (Broker/Wallet/VPS).
 
 ### Informasi Rilis
 - **Author**: Daniels Trysyahputra
