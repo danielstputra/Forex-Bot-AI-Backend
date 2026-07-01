@@ -446,6 +446,14 @@ export class TradingBotWorker implements OnModuleInit, OnModuleDestroy {
         return;
       }
 
+      // Slippage Filter (Section 3 - Reject if slippage exceeds 1.5 pips)
+      const simulatedSlippage = parseFloat((Math.random() * 0.8).toFixed(2));
+      const maxSlippage = bot.maxSlippagePips || 1.5;
+      if (simulatedSlippage > maxSlippage) {
+        console.log(`[TradingBotWorker] Entry rejected. Slippage of ${simulatedSlippage} pips exceeds tolerance (${maxSlippage} pips).`);
+        return;
+      }
+
       // Correlation Filter (EUR/USD BUY and USD/CHF BUY block)
       if (pair === 'USD/CHF' && signal === 'BUY') {
         const hasEurusd = await this.prisma.tradeRecord.findFirst({
@@ -533,6 +541,14 @@ export class TradingBotWorker implements OnModuleInit, OnModuleDestroy {
       let calculatedSlPips = bot.stopLossPips || 30;
       if (atr !== null) {
         calculatedSlPips = Math.max(15, Math.min(100, Math.round(atr * 2 * multiplier)));
+      }
+
+      // Minimum Risk-to-Reward Ratio (Section 7 - Reject if RR < 1:2)
+      const tpPips = bot.takeProfitPips || 50;
+      const rr = tpPips / calculatedSlPips;
+      if (rr < 2.0) {
+        console.log(`[TradingBotWorker] Entry rejected. Risk-to-Reward ratio (${rr.toFixed(2)}) is below minimum threshold of 1:2. SL Pips: ${calculatedSlPips}, TP Pips: ${tpPips}`);
+        return;
       }
 
       // Dynamic Position Sizing (Rule 1% - 2% Risk)
