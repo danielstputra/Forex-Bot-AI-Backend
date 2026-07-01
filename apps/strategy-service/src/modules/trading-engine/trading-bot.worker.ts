@@ -617,6 +617,7 @@ export class TradingBotWorker implements OnModuleInit, OnModuleDestroy {
               });
             }
           });
+          this.evaluateBotPerformance(trade.userId).catch(err => console.error('Self-evaluation error:', err));
         }
       }
     } catch (err: any) {
@@ -701,5 +702,59 @@ export class TradingBotWorker implements OnModuleInit, OnModuleDestroy {
     const currentD = (currentK + previousK + oldestK) / 3;
 
     return { k: currentK, d: currentD };
+  }
+
+  private async evaluateBotPerformance(userId: string) {
+    try {
+      const closedCount = await this.prisma.tradeRecord.count({
+        where: { userId, status: 'CLOSED' }
+      });
+
+      if (closedCount === 0 || closedCount % 100 !== 0) return;
+
+      const trades = await this.prisma.tradeRecord.findMany({
+        where: { userId, status: 'CLOSED' },
+        orderBy: { closedAt: 'desc' },
+        take: 100
+      });
+
+      const wins = trades.filter(t => (t.profitAmount || 0) > 0).length;
+      const losses = trades.filter(t => (t.profitAmount || 0) < 0).length;
+      const winRate = wins / 100;
+      const lossRate = losses / 100;
+
+      const totalGrossProfit = trades.filter(t => (t.profitAmount || 0) > 0).reduce((sum, t) => sum + t.profitAmount!, 0);
+      const totalGrossLoss = Math.abs(trades.filter(t => (t.profitAmount || 0) < 0).reduce((sum, t) => sum + t.profitAmount!, 0));
+      const profitFactor = totalGrossLoss === 0 ? totalGrossProfit : totalGrossProfit / totalGrossLoss;
+
+      const avgWin = wins === 0 ? 0 : totalGrossProfit / wins;
+      const avgLoss = losses === 0 ? 0 : totalGrossLoss / losses;
+      const expectancy = (winRate * avgWin) - (lossRate * avgLoss);
+
+      if (profitFactor < 1.5 || winRate < 0.4 || expectancy < 0) {
+        const config = await this.prisma.botConfig.findFirst({ where: { userId } });
+        if (config) {
+          const newRisk = Math.max(0.5, parseFloat((config.riskTolerance * 0.9).toFixed(2)));
+          await this.prisma.botConfig.update({
+            where: { id: config.id },
+            data: { riskTolerance: newRisk }
+          });
+
+          await this.prisma.auditLog.create({
+            data: {
+              userId,
+              action: 'BOT_SELF_EVALUATION',
+              ipAddress: '127.0.0.1',
+              details: `Self-Evaluation for last 100 trades triggered risk reduction. Win Rate: ${(winRate * 100).toFixed(1)}%, Profit Factor: ${profitFactor.toFixed(2)}, Expectancy: $${expectancy.toFixed(2)}. Risk Tolerance reduced from ${config.riskTolerance}% to ${newRisk}%`,
+              status: 'SUCCESS'
+            }
+          });
+
+          console.log(`[TradingBotWorker] Self-Evaluation: Reduced risk tolerance for underperforming user ${userId} to ${newRisk}%`);
+        }
+      }
+    } catch (err: any) {
+      console.error(`[TradingBotWorker] Error in bot self-evaluation for user ${userId}:`, err.message);
+    }
   }
 }
