@@ -166,7 +166,7 @@ export class MarketDataGateway implements OnGatewayConnection, OnGatewayDisconne
       if (!json) {
         try {
           const data = await httpsGetJson(
-            'https://api.frankfurter.app/latest?from=USD&to=EUR,GBP,JPY,AUD'
+            'https://api.frankfurter.dev/v1/latest?base=USD&symbols=EUR,GBP,JPY,AUD'
           );
           const rates = data.rates;
           
