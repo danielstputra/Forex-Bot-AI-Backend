@@ -3,9 +3,5 @@ import { IsString, IsNotEmpty } from 'class-validator';
 export class UpgradeSubscriptionDto {
   @IsString()
   @IsNotEmpty()
-  planId!: string;
-
-  @IsString()
-  @IsNotEmpty()
-  paymentMethod!: string;
+  tier!: string;
 }

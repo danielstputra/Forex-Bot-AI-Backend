@@ -8,7 +8,7 @@ export enum AlertCondition {
 export class CreateAlertDto {
   @IsString()
   @IsNotEmpty()
-  pair!: string;
+  symbol!: string;
 
   @IsEnum(AlertCondition)
   condition!: AlertCondition;
