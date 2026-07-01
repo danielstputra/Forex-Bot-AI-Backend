@@ -17,18 +17,39 @@ export class MarketDataService {
     }
 
     try {
-      const response = await fetch(
-        `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?range=${range}&interval=${interval}`,
-        {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-          },
-          signal: AbortSignal.timeout(5000),
-        }
-      );
+      let response;
+      try {
+        response = await fetch(
+          `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?range=${range}&interval=${interval}`,
+          {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            },
+            signal: AbortSignal.timeout(5000),
+          }
+        );
+      } catch (e1: any) {
+        this.logger.warn(`Query1 failed for historical data of ${pair}: ${e1.message}`);
+      }
 
-      if (!response.ok) {
-        throw new Error(`Failed to fetch from Yahoo Finance: ${response.statusText}`);
+      if (!response || !response.ok) {
+        try {
+          response = await fetch(
+            `https://query2.finance.yahoo.com/v8/finance/chart/${symbol}?range=${range}&interval=${interval}`,
+            {
+              headers: {
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2.1 Safari/605.1.15',
+              },
+              signal: AbortSignal.timeout(5000),
+            }
+          );
+        } catch (e2: any) {
+          this.logger.warn(`Query2 failed for historical data of ${pair}: ${e2.message}`);
+        }
+      }
+
+      if (!response || !response.ok) {
+        throw new Error(`Failed to fetch from Yahoo Finance mirrors`);
       }
 
       const json = await response.json();

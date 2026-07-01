@@ -119,16 +119,74 @@ export class MarketDataGateway implements OnGatewayConnection, OnGatewayDisconne
 
       // Try query2 if query1 failed or returned non-ok status
       if (!response || !response.ok) {
-        response = await fetch(
-          'https://query2.finance.yahoo.com/v7/finance/quote?symbols=EURUSD=X,GBPUSD=X,USDJPY=X,AUDUSD=X',
-          {
-            headers: headersList[1],
-            signal: AbortSignal.timeout(3000),
-          }
-        );
+        try {
+          response = await fetch(
+            'https://query2.finance.yahoo.com/v7/finance/quote?symbols=EURUSD=X,GBPUSD=X,USDJPY=X,AUDUSD=X',
+            {
+              headers: headersList[1],
+              signal: AbortSignal.timeout(3000),
+            }
+          );
+        } catch (e2) {
+          console.warn('[MarketData] Query2 failed, trying Frankfurter API fallback...');
+        }
       }
 
-      if (!response.ok) throw new Error(`HTTP ${response.status} from Yahoo Finance`);
+      // Try Frankfurter API if Yahoo Finance completely failed
+      if (!response || !response.ok) {
+        try {
+          const frankResponse = await fetch(
+            'https://api.frankfurter.app/latest?from=USD&to=EUR,GBP,JPY,AUD',
+            { signal: AbortSignal.timeout(3000) }
+          );
+          if (frankResponse.ok) {
+            const data = await frankResponse.json();
+            const rates = data.rates;
+            
+            // Map USD rates back to pairs
+            const eurUsd = parseFloat((1 / rates.EUR).toFixed(5));
+            const gbpUsd = parseFloat((1 / rates.GBP).toFixed(5));
+            const usdJpy = parseFloat((rates.JPY).toFixed(3));
+            const audUsd = parseFloat((1 / rates.AUD).toFixed(5));
+
+            this.currentPrices['EUR/USD'] = eurUsd;
+            this.currentPrices['GBP/USD'] = gbpUsd;
+            this.currentPrices['USD/JPY'] = usdJpy;
+            this.currentPrices['AUD/USD'] = audUsd;
+
+            const ticks = [
+              { pair: 'EUR/USD', price: eurUsd },
+              { pair: 'GBP/USD', price: gbpUsd },
+              { pair: 'USD/JPY', price: usdJpy },
+              { pair: 'AUD/USD', price: audUsd }
+            ].map(item => ({
+              pair: item.pair,
+              time: Math.floor(Date.now() / 1000),
+              open: item.price,
+              high: item.price,
+              low: item.price,
+              close: item.price,
+              volume: 100
+            }));
+
+            // Broadcast to other microservices via Redis Pub/Sub
+            this.redis.publish('market:ticks', JSON.stringify(ticks)).catch((err) => {
+              console.error('[MarketData] Failed to publish ticks to Redis:', err.message);
+            });
+
+            // Broadcast to WebSocket clients
+            if (this.server) {
+              this.server.emit('tick', ticks);
+            }
+            console.log('[MarketData] Successfully fallback-fetched prices from Frankfurter API.');
+            return;
+          }
+        } catch (frankErr: any) {
+          console.warn('[MarketData] Frankfurter API fallback also failed:', frankErr.message);
+        }
+      }
+
+      if (!response || !response.ok) throw new Error('Yahoo Finance and Frankfurter mirrors failed');
 
       const json = await response.json();
       const results = json.quoteResponse?.result || [];
