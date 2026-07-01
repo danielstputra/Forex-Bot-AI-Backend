@@ -196,6 +196,15 @@ export class TradingEngineService {
     });
   }
 
+  async purgeLicense(userId: string, licenseId: string) {
+    const config = await this.prisma.botConfig.findFirst({ where: { userId } });
+    if (!config) throw new BadRequestException('Bot configuration not found.');
+
+    return this.prisma.strategyLicense.deleteMany({
+      where: { id: licenseId, botConfigId: config.id }
+    });
+  }
+
   async getOrderLogs(userId: string) {
     const trades = await this.prisma.tradeRecord.findMany({
       where: { userId },

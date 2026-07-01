@@ -6,6 +6,7 @@ import { createRedisClient } from '@app/shared';
   cors: {
     origin: '*',
   },
+  transports: ['websocket', 'polling'],
 })
 export class MarketDataGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()

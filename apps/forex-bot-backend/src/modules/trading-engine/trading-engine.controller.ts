@@ -44,6 +44,11 @@ export class TradingEngineController {
     return this.tradingEngineService.revokeLicense(req.user.sub, id);
   }
 
+  @Delete('license/:id/purge')
+  async purgeLicense(@Request() req: any, @Param('id') id: string) {
+    return this.tradingEngineService.purgeLicense(req.user.sub, id);
+  }
+
   // GAP 4: Order execution logs
   @Get('order-logs')
   async getOrderLogs(@Request() req: any) {
