@@ -72,11 +72,11 @@ Dokumentasi resmi untuk seluruh endpoint API yang mencakup manajemen Multi-Tenan
 *Gunakan token JWT yang didapat dari endpoint Login untuk mengakses fitur terkunci.*
     `.trim())
     .setVersion('1.0.0')
-    .setContact('Daniels Trysyahputra', 'https://github.com/danielstputra', 'contact@danielstputra.com')
+    .setContact('Daniels Trysyahputra', 'https://github.com/danielstputra', 'danielstputra@gmail.com')
     .setExternalDoc('Postman Collection (JSON)', '/api/docs-json')
     .addBearerAuth()
     .build();
-    
+
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api/docs', app, document, {
     jsonDocumentUrl: 'api/docs-json',
