@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Body, UseGuards, Request } from '@nestjs/common';
 import { SubscriptionService } from './subscription.service';
 import { JwtAuthGuard } from '../../core/auth/jwt-auth.guard';
+import { UpgradeSubscriptionDto } from './dto/subscription.dto';
 
 @Controller('subscription')
 @UseGuards(JwtAuthGuard)
@@ -23,7 +24,7 @@ export class SubscriptionController {
   }
 
   @Post('upgrade')
-  async upgrade(@Request() req: any, @Body() body: any) {
+  async upgrade(@Request() req: any, @Body() body: UpgradeSubscriptionDto) {
     return this.subscriptionService.upgrade(req.user.id, body);
   }
 }

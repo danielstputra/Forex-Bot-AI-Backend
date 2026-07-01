@@ -1,6 +1,7 @@
 import { Controller, Post, Get, Body, UseGuards, Request } from '@nestjs/common';
 import { VpsService } from './vps.service';
 import { JwtAuthGuard } from '../../core/auth/jwt-auth.guard';
+import { ProvisionVpsDto } from './dto/vps.dto';
 
 @Controller('vps')
 @UseGuards(JwtAuthGuard)
@@ -13,7 +14,7 @@ export class VpsController {
   }
 
   @Post('provision')
-  async provisionVps(@Request() req: any, @Body() body: any) {
+  async provisionVps(@Request() req: any, @Body() body: ProvisionVpsDto) {
     return this.vpsService.provisionVps(req.user.sub, body);
   }
 }

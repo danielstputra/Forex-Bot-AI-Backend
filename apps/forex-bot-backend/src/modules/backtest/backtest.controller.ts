@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Delete, Body, Param, UseGuards, Request } from '@nestjs/common';
 import { BacktestPersistenceService } from './backtest.service';
 import { JwtAuthGuard } from '../../core/auth/jwt-auth.guard';
+import { SaveBacktestResultDto } from './dto/backtest.dto';
 
 @Controller('backtest')
 @UseGuards(JwtAuthGuard)
@@ -13,7 +14,7 @@ export class BacktestController {
   }
 
   @Post('save')
-  async saveResult(@Request() req: any, @Body() body: any) {
+  async saveResult(@Request() req: any, @Body() body: SaveBacktestResultDto) {
     return this.backtestService.saveResult(req.user.id, body);
   }
 

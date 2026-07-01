@@ -1,6 +1,7 @@
 import { Controller, Post, Get, Body, UseGuards, Request } from '@nestjs/common';
 import { LoyaltyService } from './loyalty.service';
 import { JwtAuthGuard } from '../../core/auth/jwt-auth.guard';
+import { ClaimRewardDto } from './dto/loyalty.dto';
 
 @Controller('loyalty')
 @UseGuards(JwtAuthGuard)
@@ -13,7 +14,7 @@ export class LoyaltyController {
   }
 
   @Post('claim')
-  async claimReward(@Request() req: any, @Body() body: any) {
+  async claimReward(@Request() req: any, @Body() body: ClaimRewardDto) {
     return this.loyaltyService.claimReward(req.user.sub, body);
   }
 }

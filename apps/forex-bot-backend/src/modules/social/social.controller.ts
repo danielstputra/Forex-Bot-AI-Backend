@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Delete, Body, Param, UseGuards, Request } from '@nestjs/common';
 import { SocialService } from './social.service';
 import { JwtAuthGuard } from '../../core/auth/jwt-auth.guard';
+import { StartCopyingDto } from './dto/social.dto';
 
 @Controller('social')
 @UseGuards(JwtAuthGuard)
@@ -18,7 +19,7 @@ export class SocialController {
   }
 
   @Post('copy/:leaderId')
-  async startCopying(@Request() req: any, @Param('leaderId') leaderId: string, @Body() body: any) {
+  async startCopying(@Request() req: any, @Param('leaderId') leaderId: string, @Body() body: StartCopyingDto) {
     return this.socialService.startCopying(req.user.id, leaderId, body);
   }
 

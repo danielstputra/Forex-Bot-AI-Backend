@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Body, Param, UseGuards, Request } from '@nestjs/common';
 import { PammService } from './pamm.service';
 import { JwtAuthGuard } from '../../core/auth/jwt-auth.guard';
+import { CreatePoolDto, UpdateAllocationDto } from './dto/pamm.dto';
 
 @Controller('pamm')
 @UseGuards(JwtAuthGuard)
@@ -13,7 +14,7 @@ export class PammController {
   }
 
   @Post('pools')
-  async createPool(@Request() req: any, @Body() body: any) {
+  async createPool(@Request() req: any, @Body() body: CreatePoolDto) {
     return this.pammService.createPool(req.user.id, body);
   }
 
@@ -23,7 +24,7 @@ export class PammController {
   }
 
   @Post('pools/:id/allocation')
-  async updateAllocation(@Param('id') id: string, @Body() body: any) {
+  async updateAllocation(@Param('id') id: string, @Body() body: UpdateAllocationDto) {
     return this.pammService.updateAllocation(id, body);
   }
 

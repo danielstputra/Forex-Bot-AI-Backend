@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Delete, Body, Param, UseGuards, Request } from '@nestjs/common';
 import { DeveloperService } from './developer.service';
 import { JwtAuthGuard } from '../../core/auth/jwt-auth.guard';
+import { GenerateApiKeyDto } from './dto/developer.dto';
 
 @Controller('developer')
 @UseGuards(JwtAuthGuard)
@@ -13,7 +14,7 @@ export class DeveloperController {
   }
 
   @Post('keys')
-  async generateKey(@Request() req: any, @Body() body: any) {
+  async generateKey(@Request() req: any, @Body() body: GenerateApiKeyDto) {
     return this.developerService.generateKey(req.user.id, body);
   }
 

@@ -4,6 +4,7 @@ import { JwtAuthGuard } from '../../core/auth/jwt-auth.guard';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import * as path from 'path';
+import { UpdateThemeDto, CreateTenantSubscriptionDto } from './dto/tenant.dto';
 
 @Controller('tenant')
 export class TenantController {
@@ -16,7 +17,7 @@ export class TenantController {
 
   @Post('theme')
   @UseGuards(JwtAuthGuard)
-  async updateTheme(@Request() req: any, @Body() body: any) {
+  async updateTheme(@Request() req: any, @Body() body: UpdateThemeDto) {
     return this.tenantService.updateTheme(req.user.sub, body);
   }
 
@@ -59,7 +60,7 @@ export class TenantController {
 
   @Post('subscriptions')
   @UseGuards(JwtAuthGuard)
-  async createTenantSubscription(@Body() body: any) {
+  async createTenantSubscription(@Body() body: CreateTenantSubscriptionDto) {
     return this.tenantService.createTenantSubscription(body);
   }
 

@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Put, Delete, Param, Body, UseGuards, Request } from '@nestjs/common';
 import { BackofficeService } from './backoffice.service';
 import { JwtAuthGuard } from '../../core/auth/jwt-auth.guard';
+import { UpdateAppConfigDto, CreateSystemMenuDto, UpdateSystemMenuDto, CreateRoleDto, CreateSubscriptionPlanDto, UpdateSubscriptionPlanDto } from './dto/backoffice.dto';
 
 @Controller('backoffice')
 @UseGuards(JwtAuthGuard)
@@ -85,7 +86,7 @@ export class BackofficeController {
   }
 
   @Post('config')
-  async updateAppConfig(@Body() body: any) {
+  async updateAppConfig(@Body() body: UpdateAppConfigDto) {
     return this.backofficeService.updateAppConfig(body);
   }
 
@@ -96,12 +97,12 @@ export class BackofficeController {
   }
 
   @Post('menus')
-  async createSystemMenu(@Body() body: any) {
+  async createSystemMenu(@Body() body: CreateSystemMenuDto) {
     return this.backofficeService.createSystemMenu(body);
   }
 
   @Put('menus/:id')
-  async updateSystemMenu(@Param('id') id: string, @Body() body: any) {
+  async updateSystemMenu(@Param('id') id: string, @Body() body: UpdateSystemMenuDto) {
     return this.backofficeService.updateSystemMenu(id, body);
   }
 
@@ -117,7 +118,7 @@ export class BackofficeController {
   }
 
   @Post('roles')
-  async createRole(@Body() body: any) {
+  async createRole(@Body() body: CreateRoleDto) {
     return this.backofficeService.createRole(body);
   }
 
@@ -158,12 +159,12 @@ export class BackofficeController {
   }
 
   @Post('subscription-plans')
-  async createSubscriptionPlan(@Body() body: any) {
+  async createSubscriptionPlan(@Body() body: CreateSubscriptionPlanDto) {
     return this.backofficeService.createSubscriptionPlan(body);
   }
 
   @Put('subscription-plans/:id')
-  async updateSubscriptionPlan(@Param('id') id: string, @Body() body: any) {
+  async updateSubscriptionPlan(@Param('id') id: string, @Body() body: UpdateSubscriptionPlanDto) {
     return this.backofficeService.updateSubscriptionPlan(id, body);
   }
 
