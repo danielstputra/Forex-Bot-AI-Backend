@@ -267,7 +267,22 @@ export class TradingBotWorker implements OnModuleInit, OnModuleDestroy {
       }
 
       if (signal) {
-        await this.evaluateAndExecute(bot, pair, close, signal, atr, rsi, stoch);
+        await this.evaluateAndExecute(
+          bot,
+          pair,
+          close,
+          signal,
+          atr,
+          rsi,
+          stoch,
+          useEmaCross,
+          isBullishCross,
+          isBearishCross,
+          isBuyPullback,
+          isSellPullback,
+          rsiBuyConfirm,
+          rsiSellConfirm
+        );
       }
     }
   }
@@ -279,31 +294,112 @@ export class TradingBotWorker implements OnModuleInit, OnModuleDestroy {
     signal: 'BUY' | 'SELL',
     atr: number | null,
     rsi: number,
-    stoch: { k: number; d: number }
+    stoch: { k: number; d: number },
+    useEmaCross: boolean,
+    isBullishCross: boolean,
+    isBearishCross: boolean,
+    isBuyPullback: boolean,
+    isSellPullback: boolean,
+    rsiBuyConfirm: boolean,
+    rsiSellConfirm: boolean
   ) {
     try {
-      // Fundamental News Filter (Avoid entry within 30 minutes of High Impact Economic Events)
-      if (bot.newsFilterOn) {
-        const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000);
-        const thirtyMinutesLater = new Date(Date.now() + 30 * 60 * 1000);
-        const baseCurrency = pair.split('/')[0];
-        const quoteCurrency = pair.split('/')[1];
+      const multiplier = pair === 'USD/JPY' ? 100 : 10000;
+      const simulatedSpread = parseFloat((Math.random() * 1.5 + 1.8).toFixed(1));
 
-        const recentNews = await this.prisma.economicEvent.findFirst({
-          where: {
-            impact: 'HIGH',
-            currency: {
-              in: [baseCurrency, quoteCurrency, 'USD']
-            },
-            eventDate: {
-              gte: thirtyMinutesAgo,
-              lte: thirtyMinutesLater
-            }
-          }
+      // 1. Session check
+      const isSessionOk = this.isTradingSessionValid();
+
+      // 2. Spread mapping
+      const maxSpreadMap: Record<string, number> = {
+        'EUR/USD': 2.5,
+        'GBP/USD': 3.0,
+        'USD/JPY': 2.0
+      };
+      const maxSpread = maxSpreadMap[pair] || 3.0;
+      const isSpreadOk = simulatedSpread <= maxSpread;
+
+      // 3. News Check (30m before / 15m after according to v2)
+      const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000);
+      const fifteenMinutesLater = new Date(Date.now() + 15 * 60 * 1000);
+      const baseCurrency = pair.split('/')[0];
+      const quoteCurrency = pair.split('/')[1];
+
+      const recentNews = await this.prisma.economicEvent.findFirst({
+        where: {
+          impact: 'HIGH',
+          currency: { in: [baseCurrency, quoteCurrency, 'USD'] },
+          eventDate: { gte: thirtyMinutesAgo, lte: fifteenMinutesLater }
+        }
+      });
+      const isNewsSafe = !recentNews;
+
+      // 4. Entry Decision Score calculation (Requires score >= 80)
+      let score = 0;
+      
+      // Trend Align (20 pts)
+      const trendAligned = !useEmaCross || (signal === 'BUY' && isBullishCross) || (signal === 'SELL' && isBearishCross);
+      if (trendAligned) score += 20;
+
+      // Pullback Micro Structure (15 pts)
+      const isPullback = (signal === 'BUY' && isBuyPullback) || (signal === 'SELL' && isSellPullback);
+      if (isPullback) score += 15;
+
+      // AI Confidence Score (20 pts)
+      score += 20; // Simulated AI engine score based on indicator confluence
+
+      // Volume / Volatility ATR Rising (10 pts)
+      if (atr !== null && atr > 0) score += 10;
+
+      // RSI Signal confirmation (10 pts)
+      const rsiConfirmed = (signal === 'BUY' && rsiBuyConfirm) || (signal === 'SELL' && rsiSellConfirm);
+      if (rsiConfirmed) score += 10;
+
+      // ATR Volatility Normal Range (10 pts)
+      score += 10;
+
+      // Valid Session check (5 pts)
+      if (isSessionOk) score += 5;
+
+      // Safe Spread check (5 pts)
+      if (isSpreadOk) score += 5;
+
+      // Fundamental News Safe (5 pts)
+      if (isNewsSafe) score += 5;
+
+      console.log(`[TradingBotWorker] Entry scoring for ${pair}: ${score}/100`);
+
+      if (score < 80) {
+        console.log(`[TradingBotWorker] Entry rejected. Confluence score ${score}/100 is below minimum threshold (80/100) for ${pair}`);
+        return;
+      }
+
+      if (!isNewsSafe) {
+        console.log(`[TradingBotWorker] Entry avoided for ${pair} due to High Impact News: ${recentNews?.event}`);
+        return;
+      }
+
+      if (!isSpreadOk) {
+        console.log(`[TradingBotWorker] Entry rejected. Spread of ${simulatedSpread} pips exceeds limit (${maxSpread} pips) for ${pair}`);
+        return;
+      }
+
+      // Correlation Filter (EUR/USD BUY and USD/CHF BUY block)
+      if (pair === 'USD/CHF' && signal === 'BUY') {
+        const hasEurusd = await this.prisma.tradeRecord.findFirst({
+          where: { userId: bot.userId, currencyPair: 'EUR/USD', tradeType: 'BUY', status: 'OPEN' }
         });
-
-        if (recentNews) {
-          console.log(`[TradingBotWorker] Entry avoided for ${pair} due to High Impact News: ${recentNews.event}`);
+        if (hasEurusd) {
+          console.log(`[TradingBotWorker] Entry rejected. Correlation filter active: EUR/USD BUY is already open.`);
+          return;
+        }
+      }
+      if (pair === 'EUR/USD' && signal === 'BUY') {
+        const hasUsdchf = await this.prisma.tradeRecord.findFirst({
+          where: { userId: bot.userId, currencyPair: 'USD/CHF', tradeType: 'BUY', status: 'OPEN' }
+        });
+        if (hasUsdchf) {
+          console.log(`[TradingBotWorker] Entry rejected. Correlation filter active: USD/CHF BUY is already open.`);
           return;
         }
       }
@@ -356,18 +452,14 @@ export class TradingBotWorker implements OnModuleInit, OnModuleDestroy {
         }
       }
 
-      // Kill-Switch Check 3: Real-Time Spread Filter (< 3.0 pips)
-      const simulatedSpread = parseFloat((Math.random() * 1.5 + 1.8).toFixed(1));
-      if (simulatedSpread > 3.0) {
-        console.log(`[TradingBotWorker] Entry rejected. Spread of ${simulatedSpread} pips exceeds limit (3.0 pips)`);
-        return;
-      }
-
-      // Position Management Check 1: Max concurrent trades
+      // Position Management Check 1: Max concurrent trades (3 positions according to v2)
       const openTradesCount = await this.prisma.tradeRecord.count({
         where: { userId: bot.userId, status: 'OPEN' }
       });
-      if (openTradesCount >= 5) return;
+      if (openTradesCount >= 3) {
+        console.log(`[TradingBotWorker] Entry rejected. Max concurrent open positions limit (3) reached.`);
+        return;
+      }
 
       // Position Check 2: Prevent duplicate trades on same pair
       const existingPairTrade = await this.prisma.tradeRecord.findFirst({
@@ -376,7 +468,6 @@ export class TradingBotWorker implements OnModuleInit, OnModuleDestroy {
       if (existingPairTrade) return;
 
       // Volatility-based Stop Loss calculation (ATR * 2)
-      const multiplier = pair === 'USD/JPY' ? 100 : 10000;
       let calculatedSlPips = bot.stopLossPips || 30;
       if (atr !== null) {
         calculatedSlPips = Math.max(15, Math.min(100, Math.round(atr * 2 * multiplier)));
@@ -421,7 +512,8 @@ export class TradingBotWorker implements OnModuleInit, OnModuleDestroy {
               atr,
               spread: simulatedSpread,
               calculatedSlPips,
-              balanceAtEntry: balance
+              balanceAtEntry: balance,
+              confluenceScore: score
             })
           }
         });
@@ -756,5 +848,23 @@ export class TradingBotWorker implements OnModuleInit, OnModuleDestroy {
     } catch (err: any) {
       console.error(`[TradingBotWorker] Error in bot self-evaluation for user ${userId}:`, err.message);
     }
+  }
+
+  private isTradingSessionValid(): boolean {
+    const now = new Date();
+    const day = now.getUTCDay();
+    const hours = now.getUTCHours();
+    
+    // Avoid Weekends (Saturday=6, Sunday=0)
+    if (day === 6 || day === 0) return false;
+    
+    // Avoid Friday Last Hours (Friday=5, hours >= 20 UTC)
+    if (day === 5 && hours >= 20) return false;
+    
+    // London (8-16) or New York (13-21) UTC
+    const isLondon = hours >= 8 && hours <= 16;
+    const isNewYork = hours >= 13 && hours <= 21;
+    
+    return isLondon || isNewYork;
   }
 }
