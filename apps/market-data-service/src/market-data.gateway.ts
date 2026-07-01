@@ -264,7 +264,59 @@ export class MarketDataGateway implements OnGatewayConnection, OnGatewayDisconne
         }
       }
 
-      if (!json) throw new Error('Yahoo Finance, Frankfurter, and ExchangeRate-API mirrors failed');
+      // Try Fawazahmed0 Currency API (jsDelivr CDN) fallback if ExchangeRate-API also failed
+      if (!json) {
+        try {
+          const data = await httpsGetJson(
+            'https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/usd.json'
+          );
+          if (data && data.usd) {
+            const rates = data.usd;
+            
+            // Map USD rates back to pairs
+            const eurUsd = parseFloat((1 / rates.eur).toFixed(5));
+            const gbpUsd = parseFloat((1 / rates.gbp).toFixed(5));
+            const usdJpy = parseFloat((rates.jpy).toFixed(3));
+            const audUsd = parseFloat((1 / rates.aud).toFixed(5));
+
+            this.currentPrices['EUR/USD'] = eurUsd;
+            this.currentPrices['GBP/USD'] = gbpUsd;
+            this.currentPrices['USD/JPY'] = usdJpy;
+            this.currentPrices['AUD/USD'] = audUsd;
+
+            const ticks = [
+              { pair: 'EUR/USD', price: eurUsd },
+              { pair: 'GBP/USD', price: gbpUsd },
+              { pair: 'USD/JPY', price: usdJpy },
+              { pair: 'AUD/USD', price: audUsd }
+            ].map(item => ({
+              pair: item.pair,
+              time: Math.floor(Date.now() / 1000),
+              open: item.price,
+              high: item.price,
+              low: item.price,
+              close: item.price,
+              volume: 100
+            }));
+
+            // Broadcast to other microservices via Redis Pub/Sub
+            this.redis.publish('market:ticks', JSON.stringify(ticks)).catch((err) => {
+              console.error('[MarketData] Failed to publish ticks to Redis:', err.message);
+            });
+
+            // Broadcast to WebSocket clients
+            if (this.server) {
+              this.server.emit('tick', ticks);
+            }
+            console.log('[MarketData] Successfully fallback-fetched prices from Fawazahmed0 Currency API.');
+            return;
+          }
+        } catch (fawazErr: any) {
+          console.warn('[MarketData] Fawazahmed0 Currency API fallback also failed:', fawazErr.message);
+        }
+      }
+
+      if (!json) throw new Error('Yahoo Finance, Frankfurter, ExchangeRate-API, and Fawazahmed0 mirrors failed');
 
       const results = json.quoteResponse?.result || [];
 
