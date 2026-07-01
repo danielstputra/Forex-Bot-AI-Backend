@@ -5,6 +5,7 @@ import helmet from 'helmet';
 import { getRsaKeys } from './core/auth/jwt-rsa.helper';
 import { PrismaClient } from '@prisma/client';
 import { ProblemDetailsFilter } from '@app/shared';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 
 const prisma = new PrismaClient();
 
@@ -54,6 +55,23 @@ async function bootstrap() {
     transform: true,
     forbidNonWhitelisted: true,
   }));
+
+  // 5. Swagger Setup
+  const config = new DocumentBuilder()
+    .setTitle('Forex Bot AI Backend API')
+    .setDescription('The official API documentation for Forex Bot AI Platform (B2B2C White-Label OTT Architecture)')
+    .setVersion('1.0')
+    .addBearerAuth()
+    .build();
+    
+  const document = SwaggerModule.createDocument(app, config);
+  SwaggerModule.setup('api/docs', app, document, {
+    jsonDocumentUrl: 'api/docs-json',
+    yamlDocumentUrl: 'api/docs-yaml',
+    swaggerOptions: {
+      persistAuthorization: true,
+    }
+  });
 
   const port = process.env.PORT || 5000;
   await app.listen(port);

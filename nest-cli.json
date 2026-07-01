@@ -5,7 +5,8 @@
   "compilerOptions": {
     "deleteOutDir": true,
     "webpack": true,
-    "tsConfigPath": "apps/forex-bot-backend/tsconfig.app.json"
+    "tsConfigPath": "apps/forex-bot-backend/tsconfig.app.json",
+    "plugins": ["@nestjs/swagger"]
   },
   "monorepo": true,
   "root": "apps/forex-bot-backend",
