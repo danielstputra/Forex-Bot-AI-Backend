@@ -50,17 +50,47 @@ export class MarketDataGateway implements OnGatewayConnection, OnGatewayDisconne
    */
   private async fetchRealtimeTicks() {
     try {
-      const response = await fetch(
-        'https://query1.finance.yahoo.com/v7/finance/quote?symbols=EURUSD=X,GBPUSD=X,USDJPY=X,AUDUSD=X',
+      let response;
+      const headersList: Record<string, string>[] = [
         {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'application/json',
-          },
-          signal: AbortSignal.timeout(3000),
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+          'Accept': 'application/json, text/plain, */*',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Origin': 'https://finance.yahoo.com',
+          'Referer': 'https://finance.yahoo.com/'
+        },
+        {
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2.1 Safari/605.1.15',
+          'Accept': 'application/json',
+          'Accept-Language': 'en-GB,en;q=0.8'
         }
-      );
-      if (!response.ok) throw new Error('Failed to fetch from Yahoo Finance');
+      ];
+
+      // Try query1 first
+      try {
+        response = await fetch(
+          'https://query1.finance.yahoo.com/v7/finance/quote?symbols=EURUSD=X,GBPUSD=X,USDJPY=X,AUDUSD=X',
+          {
+            headers: headersList[0],
+            signal: AbortSignal.timeout(3000),
+          }
+        );
+      } catch (e1) {
+        console.warn('[MarketData] Query1 failed, trying Query2 fallback...');
+      }
+
+      // Try query2 if query1 failed or returned non-ok status
+      if (!response || !response.ok) {
+        response = await fetch(
+          'https://query2.finance.yahoo.com/v7/finance/quote?symbols=EURUSD=X,GBPUSD=X,USDJPY=X,AUDUSD=X',
+          {
+            headers: headersList[1],
+            signal: AbortSignal.timeout(3000),
+          }
+        );
+      }
+
+      if (!response.ok) throw new Error(`HTTP ${response.status} from Yahoo Finance`);
 
       const json = await response.json();
       const results = json.quoteResponse?.result || [];
@@ -97,7 +127,9 @@ export class MarketDataGateway implements OnGatewayConnection, OnGatewayDisconne
         });
 
         // Broadcast to WebSocket clients
-        this.server.emit('tick', ticks);
+        if (this.server) {
+          this.server.emit('tick', ticks);
+        }
       }
     } catch (error: any) {
       console.warn('[MarketData] Error fetching real-time ticks:', error.message, '. Simulating tick updates.');
