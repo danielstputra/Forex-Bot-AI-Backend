@@ -174,7 +174,59 @@ export class MarketDataGateway implements OnGatewayConnection, OnGatewayDisconne
         }
       }
 
-      if (!json) throw new Error('Yahoo Finance and Frankfurter mirrors failed');
+      // Try ExchangeRate-API fallback if both Yahoo and Frankfurter failed
+      if (!json) {
+        try {
+          const data = await httpsGetJson(
+            'https://open.er-api.com/v6/latest/USD'
+          );
+          if (data && data.result === 'success') {
+            const rates = data.rates;
+            
+            // Map USD rates back to pairs
+            const eurUsd = parseFloat((1 / rates.EUR).toFixed(5));
+            const gbpUsd = parseFloat((1 / rates.GBP).toFixed(5));
+            const usdJpy = parseFloat((rates.JPY).toFixed(3));
+            const audUsd = parseFloat((1 / rates.AUD).toFixed(5));
+
+            this.currentPrices['EUR/USD'] = eurUsd;
+            this.currentPrices['GBP/USD'] = gbpUsd;
+            this.currentPrices['USD/JPY'] = usdJpy;
+            this.currentPrices['AUD/USD'] = audUsd;
+
+            const ticks = [
+              { pair: 'EUR/USD', price: eurUsd },
+              { pair: 'GBP/USD', price: gbpUsd },
+              { pair: 'USD/JPY', price: usdJpy },
+              { pair: 'AUD/USD', price: audUsd }
+            ].map(item => ({
+              pair: item.pair,
+              time: Math.floor(Date.now() / 1000),
+              open: item.price,
+              high: item.price,
+              low: item.price,
+              close: item.price,
+              volume: 100
+            }));
+
+            // Broadcast to other microservices via Redis Pub/Sub
+            this.redis.publish('market:ticks', JSON.stringify(ticks)).catch((err) => {
+              console.error('[MarketData] Failed to publish ticks to Redis:', err.message);
+            });
+
+            // Broadcast to WebSocket clients
+            if (this.server) {
+              this.server.emit('tick', ticks);
+            }
+            console.log('[MarketData] Successfully fallback-fetched prices from ExchangeRate-API.');
+            return;
+          }
+        } catch (erErr: any) {
+          console.warn('[MarketData] ExchangeRate-API fallback also failed:', erErr.message);
+        }
+      }
+
+      if (!json) throw new Error('Yahoo Finance, Frankfurter, and ExchangeRate-API mirrors failed');
 
       const results = json.quoteResponse?.result || [];
 
