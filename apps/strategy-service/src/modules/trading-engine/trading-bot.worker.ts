@@ -104,26 +104,52 @@ export class TradingBotWorker implements OnModuleInit, OnModuleDestroy {
 
     // Check Daily Drawdown and handle Emergency Kill-Switch for active bots
     for (const bot of activeBots) {
+    // Check Drawdowns and handle Emergency Kill-Switch for active bots
+    for (const bot of activeBots) {
+      // 1. Daily drawdown variables
       const startOfDay = new Date();
       startOfDay.setHours(0, 0, 0, 0);
 
-      const closedToday = await this.prisma.tradeRecord.findMany({
-        where: {
-          userId: bot.userId,
-          status: 'CLOSED',
-          closedAt: { gte: startOfDay }
-        }
-      });
+      // 2. Weekly drawdown variables (Monday 00:00)
+      const now = new Date();
+      const dayOfWeek = now.getUTCDay();
+      const diffToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+      const startOfWeek = new Date(now.getTime() - diffToMonday * 24 * 60 * 60 * 1000);
+      startOfWeek.setUTCHours(0, 0, 0, 0);
 
-      let totalLossToday = 0;
-      let totalProfitToday = 0;
+      // 3. Monthly drawdown variables (1st of month 00:00)
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      startOfMonth.setUTCHours(0, 0, 0, 0);
+
+      // Get trades closed today, this week, and this month
+      const closedToday = await this.prisma.tradeRecord.findMany({
+        where: { userId: bot.userId, status: 'CLOSED', closedAt: { gte: startOfDay } }
+      });
+      let totalLossToday = 0, totalProfitToday = 0;
       for (const t of closedToday) {
         const profit = t.profitAmount || 0;
-        if (profit < 0) {
-          totalLossToday += Math.abs(profit);
-        } else {
-          totalProfitToday += profit;
-        }
+        if (profit < 0) totalLossToday += Math.abs(profit);
+        else totalProfitToday += profit;
+      }
+
+      const closedWeekly = await this.prisma.tradeRecord.findMany({
+        where: { userId: bot.userId, status: 'CLOSED', closedAt: { gte: startOfWeek } }
+      });
+      let totalLossWeekly = 0, totalProfitWeekly = 0;
+      for (const t of closedWeekly) {
+        const profit = t.profitAmount || 0;
+        if (profit < 0) totalLossWeekly += Math.abs(profit);
+        else totalProfitWeekly += profit;
+      }
+
+      const closedMonthly = await this.prisma.tradeRecord.findMany({
+        where: { userId: bot.userId, status: 'CLOSED', closedAt: { gte: startOfMonth } }
+      });
+      let totalLossMonthly = 0, totalProfitMonthly = 0;
+      for (const t of closedMonthly) {
+        const profit = t.profitAmount || 0;
+        if (profit < 0) totalLossMonthly += Math.abs(profit);
+        else totalProfitMonthly += profit;
       }
 
       const openTrades = await this.prisma.tradeRecord.findMany({
@@ -142,11 +168,46 @@ export class TradingBotWorker implements OnModuleInit, OnModuleDestroy {
 
       const wallet = await this.prisma.userWallet.findFirst({ where: { userId: bot.userId, currency: 'USD' } });
       const balance = wallet?.balance || 1000;
-      const startingBalance = balance - (totalProfitToday - totalLossToday);
+      
+      const startingBalanceToday = balance - (totalProfitToday - totalLossToday);
+      const startingBalanceWeekly = balance - (totalProfitWeekly - totalLossWeekly);
+      const startingBalanceMonthly = balance - (totalProfitMonthly - totalLossMonthly);
 
       const currentDayLoss = totalLossToday - floatingPnL;
-      if (currentDayLoss >= startingBalance * 0.05) {
-        console.warn(`[TradingBotWorker] EMERGENCY KILL-SWITCH: Daily drawdown limit exceeded for user ${bot.userId}. Total daily loss (realized + floating): $${currentDayLoss.toFixed(2)}`);
+      const currentWeekLoss = totalLossWeekly - floatingPnL;
+      const currentMonthLoss = totalLossMonthly - floatingPnL;
+
+      let killReason = '';
+      if (currentDayLoss >= startingBalanceToday * 0.05) {
+        killReason = 'Daily Drawdown limit (5%) exceeded';
+      } else if (currentMonthLoss >= startingBalanceMonthly * 0.15) {
+        killReason = 'Monthly Drawdown limit (15%) exceeded';
+      } else if (currentWeekLoss >= startingBalanceWeekly * 0.10) {
+        // Weekly Drawdown (10%) -> Enter Manual Review Mode (deactivate bot Config)
+        console.warn(`[TradingBotWorker] Weekly drawdown limit (10%) exceeded for user ${bot.userId}. Switching to Manual Review Mode.`);
+        
+        const config = await this.prisma.botConfig.findFirst({ where: { userId: bot.userId } });
+        if (config) {
+          await this.prisma.botConfig.update({
+            where: { id: config.id },
+            data: { isActive: false }
+          });
+
+          await this.prisma.auditLog.create({
+            data: {
+              userId: bot.userId,
+              action: 'STOP_BOT',
+              ipAddress: '127.0.0.1',
+              details: `Weekly drawdown limit (10%) exceeded. Bot switched to Manual Review Mode. Current weekly loss: $${currentWeekLoss.toFixed(2)}.`,
+              status: 'SUCCESS'
+            }
+          });
+        }
+        continue;
+      }
+
+      if (killReason) {
+        console.warn(`[TradingBotWorker] EMERGENCY KILL-SWITCH triggered: ${killReason} for user ${bot.userId}. Closing all positions and deactivating bot.`);
         
         // Deactivate bot config
         await this.prisma.botConfig.update({
@@ -178,7 +239,7 @@ export class TradingBotWorker implements OnModuleInit, OnModuleDestroy {
               data: {
                 tradeRecordId: trade.id,
                 actionType: 'ORDER_CLOSED',
-                rawPayload: JSON.stringify({ closePrice: currentPrice, profitAmount, closedAt: new Date(), reason: 'EMERGENCY_KILL_SWITCH_DRAWDOWN' })
+                rawPayload: JSON.stringify({ closePrice: currentPrice, profitAmount, closedAt: new Date(), reason: `EMERGENCY_KILL_SWITCH_${killReason.replace(/ /g, '_').toUpperCase()}` })
               }
             });
 
@@ -200,11 +261,12 @@ export class TradingBotWorker implements OnModuleInit, OnModuleDestroy {
             userId: bot.userId,
             action: 'STOP_BOT',
             ipAddress: '127.0.0.1',
-            details: `EMERGENCY KILL-SWITCH triggered. Daily drawdown limit exceeded. Closed ${openTrades.length} positions.`,
+            details: `EMERGENCY KILL-SWITCH: ${killReason}. Closed ${openTrades.length} positions.`,
             status: 'SUCCESS'
           }
         });
       }
+    }
     }
 
     // 3. Calculate indicators from bars history
@@ -479,12 +541,51 @@ export class TradingBotWorker implements OnModuleInit, OnModuleDestroy {
       dynamicLot = dynamicLot * (bot.lotMultiplier || 1.0);
       const lotSize = Math.max(0.01, Math.min(5.0, parseFloat(dynamicLot.toFixed(2))));
 
-      // Margin validation: leverage 1:500, margin requirement = $200 per lot
+      // Portfolio Exposure Checks (Section 11)
       const openTrades = await this.prisma.tradeRecord.findMany({
         where: { userId: bot.userId, status: 'OPEN' }
       });
-      const currentUsedMargin = openTrades.reduce((sum, t) => sum + (t.lotSize * 200), 0);
+
+      // 1. Max 3 positions on the same base currency
+      const openPositionsSameBase = openTrades.filter(t => t.currencyPair.startsWith(baseCurrency)).length;
+      if (openPositionsSameBase >= 3) {
+        console.log(`[TradingBotWorker] Entry rejected. Portfolio exposure limit exceeded. Max 3 positions per base currency (${baseCurrency}).`);
+        return;
+      }
+
+      // 2. Total account risk <= 6%
+      const currentRiskTotal = openTrades.length * riskPct;
+      if (currentRiskTotal + riskPct > 6.0) {
+        console.log(`[TradingBotWorker] Entry rejected. Portfolio exposure limit exceeded. Total account risk would exceed 6% (current: ${currentRiskTotal}%, requested: ${riskPct}%).`);
+        return;
+      }
+
+      // Margin validation: leverage 1:500, margin requirement = $200 per lot
+      const currentUsedMargin = openTrades.reduce((sum: number, t: any) => sum + (t.lotSize * 200), 0);
       const requiredMargin = lotSize * 200;
+      const totalUsedMargin = currentUsedMargin + requiredMargin;
+      
+      // Calculate floating PnL of open positions for equity calculation
+      let openTradesPnL = 0;
+      for (const openT of openTrades) {
+        const openPrice = this.priceHistory[openT.currencyPair]?.slice(-1)[0]?.close || openT.entryPrice;
+        const pipsDiff = openT.tradeType === 'BUY'
+          ? openPrice - openT.entryPrice
+          : openT.entryPrice - openPrice;
+        const pipValueMultiplier = openT.currencyPair === 'USD/JPY' ? 1000 : 100000;
+        openTradesPnL += pipsDiff * openT.lotSize * pipValueMultiplier;
+      }
+      const equity = balance + openTradesPnL;
+
+      if (totalUsedMargin > 0) {
+        const marginLevel = (equity / totalUsedMargin) * 100;
+        // Margin Level check (Section 10 - Margin Level < 300% -> No New Trade)
+        if (marginLevel < 300) {
+          console.log(`[TradingBotWorker] Entry rejected. Margin level is below 300% limit (${marginLevel.toFixed(1)}%).`);
+          return;
+        }
+      }
+
       if (currentUsedMargin + requiredMargin > balance) {
         console.log(`[TradingBotWorker] Entry rejected. Insufficient margin for user ${bot.userId}. Required: $${requiredMargin}, Available: $${(balance - currentUsedMargin).toFixed(2)}`);
         return;
