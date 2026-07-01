@@ -58,9 +58,22 @@ async function bootstrap() {
 
   // 5. Swagger Setup
   const config = new DocumentBuilder()
-    .setTitle('Forex Bot AI Backend API')
-    .setDescription('The official API documentation for Forex Bot AI Platform (B2B2C White-Label OTT Architecture)')
-    .setVersion('1.0')
+    .setTitle('Ultimate Enterprise OTT & IPTV Engine API (Forex Bot AI)')
+    .setDescription(`
+**Sistem Infrastruktur Backend B2B2C Skala Enterprise**
+Dokumentasi resmi untuk seluruh endpoint API yang mencakup manajemen Multi-Tenant, Keamanan Militer (E2EE, HMAC), Subscription, Real-Time Market Data, serta Integrasi Finansial.
+
+### Informasi Rilis
+- **Author**: Daniels Trysyahputra
+- **Tanggal Update/Rilis**: 1 Juli 2026
+- **Arsitektur**: Clean Architecture (CQRS) & White-Label Orchestration
+- **Keamanan**: Wajib menggunakan JWT Bearer Token untuk endpoint yang dilindungi.
+
+*Gunakan token JWT yang didapat dari endpoint Login untuk mengakses fitur terkunci.*
+    `.trim())
+    .setVersion('1.0.0')
+    .setContact('Daniels Trysyahputra', 'https://github.com/danielstputra', 'contact@danielstputra.com')
+    .setExternalDoc('Postman Collection (JSON)', '/api/docs-json')
     .addBearerAuth()
     .build();
     
