@@ -4,6 +4,7 @@ import { JwtAuthGuard } from '../../core/auth/jwt-auth.guard';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import * as path from 'path';
+import { DepositDto, WithdrawalDto, MidtransWebhookDto, XenditWebhookDto } from './dto/wallet.dto';
 
 @Controller('wallets')
 export class WalletController {
@@ -34,24 +35,24 @@ export class WalletController {
       }
     })
   )
-  async requestDeposit(@Request() req: any, @Body() body: any, @UploadedFile() file: any) {
+  async requestDeposit(@Request() req: any, @Body() body: DepositDto, @UploadedFile() file: any) {
     const filename = file ? file.filename : null;
     return this.walletService.requestDeposit(req.user.sub, body, filename);
   }
 
   @UseGuards(JwtAuthGuard)
   @Post('withdraw')
-  async requestWithdrawal(@Request() req: any, @Body() body: any) {
+  async requestWithdrawal(@Request() req: any, @Body() body: WithdrawalDto) {
     return this.walletService.requestWithdrawal(req.user.sub, body);
   }
 
   @Post('webhook/midtrans')
-  async handleMidtransWebhook(@Body() body: any) {
+  async handleMidtransWebhook(@Body() body: MidtransWebhookDto) {
     return this.walletService.handleMidtransWebhook(body);
   }
 
   @Post('webhook/xendit')
-  async handleXenditWebhook(@Body() body: any) {
+  async handleXenditWebhook(@Body() body: XenditWebhookDto) {
     return this.walletService.handleXenditWebhook(body);
   }
 }

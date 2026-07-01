@@ -4,21 +4,22 @@ import { JwtAuthGuard } from '../../core/auth/jwt-auth.guard';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import * as path from 'path';
+import { RegisterDto, LoginDto, VerifyOtpDto, ResetPasswordDto, GoogleLoginDto, UpdateProfileDto, SubmitKycDto, VerifyAccountDto, ForgotPasswordDto, FaceIdLoginDto, Setup2faDto } from './dto/auth.dto';
 
 @Controller('auth')
 export class AuthController {
   constructor(private authService: AuthService) {}
 
   @Post('register')
-  async register(@Body() body: any) {
+  async register(@Body() body: RegisterDto) {
     return this.authService.register(body);
   }
 
   @Post('verify')
-  async verifyAccount(@Body('token') token: string, @Request() req: any) {
+  async verifyAccount(@Body() body: VerifyAccountDto, @Request() req: any) {
     const ip = req.ip || req.headers['x-forwarded-for'] || '0.0.0.0';
     const ua = req.headers['user-agent'] || 'Unknown';
-    return this.authService.verifyAccount(token, ip, ua);
+    return this.authService.verifyAccount(body.token, ip, ua);
   }
 
   @Get('config')
@@ -27,41 +28,41 @@ export class AuthController {
   }
 
   @Post('login')
-  async login(@Body() body: any, @Request() req: any) {
+  async login(@Body() body: LoginDto, @Request() req: any) {
     const ip = req.ip || req.headers['x-forwarded-for'] || '0.0.0.0';
     const ua = req.headers['user-agent'] || 'Unknown';
     return this.authService.login(body, ip, ua);
   }
 
   @Post('verify-otp')
-  async verifyOtp(@Body() body: any, @Request() req: any) {
+  async verifyOtp(@Body() body: VerifyOtpDto, @Request() req: any) {
     const ip = req.ip || req.headers['x-forwarded-for'] || '0.0.0.0';
     const ua = req.headers['user-agent'] || 'Unknown';
     return this.authService.verifyOtp(body, ip, ua);
   }
 
   @Post('forgot-password')
-  async forgotPassword(@Body('email') email: string) {
-    return this.authService.forgotPassword(email);
+  async forgotPassword(@Body() body: ForgotPasswordDto) {
+    return this.authService.forgotPassword(body.email);
   }
 
   @Post('reset-password')
-  async resetPassword(@Body() body: any) {
+  async resetPassword(@Body() body: ResetPasswordDto) {
     return this.authService.resetPassword(body);
   }
 
   @Post('google-login')
-  async googleLogin(@Body() body: any, @Request() req: any) {
+  async googleLogin(@Body() body: GoogleLoginDto, @Request() req: any) {
     const ip = req.ip || req.headers['x-forwarded-for'] || '0.0.0.0';
     const ua = req.headers['user-agent'] || 'Unknown';
     return this.authService.googleLogin(body, ip, ua);
   }
 
   @Post('faceid-login')
-  async faceidLogin(@Body('email') email: string, @Request() req: any) {
+  async faceidLogin(@Body() body: FaceIdLoginDto, @Request() req: any) {
     const ip = req.ip || req.headers['x-forwarded-for'] || '0.0.0.0';
     const ua = req.headers['user-agent'] || 'Unknown';
-    return this.authService.faceidLogin(email, ip, ua);
+    return this.authService.faceidLogin(body.email, ip, ua);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -80,7 +81,7 @@ export class AuthController {
 
   @UseGuards(JwtAuthGuard)
   @Put('profile')
-  async updateProfile(@Request() req: any, @Body() body: any) {
+  async updateProfile(@Request() req: any, @Body() body: UpdateProfileDto) {
     return this.authService.updateProfile(req.user.sub, body);
   }
 
@@ -116,8 +117,8 @@ export class AuthController {
 
   @UseGuards(JwtAuthGuard)
   @Post('2fa/setup')
-  async setup2fa(@Request() req: any, @Body('code') code: string) {
-    return this.authService.setup2fa(req.user.sub, code);
+  async setup2fa(@Request() req: any, @Body() body: Setup2faDto) {
+    return this.authService.setup2fa(req.user.sub, body.code);
   }
 
   // ─── KYC DOCUMENT ──────────────────────────────────────────
@@ -129,7 +130,7 @@ export class AuthController {
 
   @UseGuards(JwtAuthGuard)
   @Post('kyc/document')
-  async submitKycDocument(@Request() req: any, @Body() body: any) {
+  async submitKycDocument(@Request() req: any, @Body() body: SubmitKycDto) {
     return this.authService.submitKycDocument(req.user.sub, body);
   }
 

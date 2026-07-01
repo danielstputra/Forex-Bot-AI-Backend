@@ -1,6 +1,7 @@
 import { Controller, Post, Get, Delete, Body, Param, UseGuards, Request } from '@nestjs/common';
 import { TradingEngineService } from './trading-engine.service';
 import { JwtOrApiKeyGuard } from '../../core/auth/jwt-or-api-key.guard';
+import { UpdateConfigDto, ExecuteOrderDto, GenerateLicenseDto } from './dto/trading-engine.dto';
 
 @Controller('trading')
 @UseGuards(JwtOrApiKeyGuard)
@@ -18,18 +19,18 @@ export class TradingEngineController {
   }
 
   @Post('config')
-  async updateConfig(@Request() req: any, @Body() body: any) {
+  async updateConfig(@Request() req: any, @Body() body: UpdateConfigDto) {
     return this.tradingEngineService.updateConfig(req.user.sub, body);
   }
 
   @Post('order')
-  async executeOrder(@Request() req: any, @Body() body: any) {
+  async executeOrder(@Request() req: any, @Body() body: ExecuteOrderDto) {
     return this.tradingEngineService.executeOrder(req.user.sub, body);
   }
 
   // GAP 5: Strategy License endpoints
   @Post('license/generate')
-  async generateLicense(@Request() req: any, @Body() body: any) {
+  async generateLicense(@Request() req: any, @Body() body: GenerateLicenseDto) {
     return this.tradingEngineService.generateLicense(req.user.sub, body);
   }
 

@@ -1,6 +1,7 @@
 import { Controller, Post, Get, Delete, Body, Param, UseGuards, Request } from '@nestjs/common';
 import { BrokerService } from './broker.service';
 import { JwtAuthGuard } from '../../core/auth/jwt-auth.guard';
+import { LinkBrokerDto } from './dto/broker.dto';
 
 @Controller('broker')
 @UseGuards(JwtAuthGuard)
@@ -8,7 +9,7 @@ export class BrokerController {
   constructor(private brokerService: BrokerService) {}
 
   @Post('link')
-  async linkAccount(@Request() req: any, @Body() body: any) {
+  async linkAccount(@Request() req: any, @Body() body: LinkBrokerDto) {
     return this.brokerService.linkAccount(req.user.sub, body);
   }
 
