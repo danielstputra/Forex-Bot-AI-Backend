@@ -1,4 +1,4 @@
-﻿-- CreateEnum
+-- CreateEnum
 CREATE TYPE "UserStatus" AS ENUM ('ACTIVE', 'PENDING', 'DEACTIVE', 'BANNED');
 
 -- CreateTable
@@ -50,7 +50,6 @@ CREATE TABLE "User" (
     "phone" TEXT,
     "country" TEXT,
     "currency" TEXT NOT NULL DEFAULT 'USD',
-    "role" TEXT NOT NULL DEFAULT 'USER',
     "status" "UserStatus" NOT NULL DEFAULT 'ACTIVE',
     "twoFactorOn" BOOLEAN NOT NULL DEFAULT false,
     "twoFactorSecret" TEXT,

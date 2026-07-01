@@ -24,8 +24,10 @@ export class ApiKeyGuard implements CanActivate {
           select: {
             id: true,
             email: true,
-            role: true,
-            status: true
+            status: true,
+            customRole: {
+              select: { name: true }
+            }
           }
         }
       }
@@ -44,7 +46,7 @@ export class ApiKeyGuard implements CanActivate {
       id: apiKeyRecord.user.id,
       sub: apiKeyRecord.user.id,
       email: apiKeyRecord.user.email,
-      role: apiKeyRecord.user.role
+      role: apiKeyRecord.user.customRole?.name || 'USER'
     };
 
     return true;

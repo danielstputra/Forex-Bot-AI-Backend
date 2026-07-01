@@ -50,12 +50,18 @@ export class PammService {
           // Find or create user for investor
           let investorUser = await this.prisma.user.findUnique({ where: { email: mInv.email } });
           if (!investorUser) {
+            let dbRole = await this.prisma.role.findUnique({ where: { name: 'USER' } });
+            if (!dbRole) {
+              dbRole = await this.prisma.role.create({
+                data: { name: 'USER', description: 'USER system role' }
+              });
+            }
             investorUser = await this.prisma.user.create({
               data: {
                 email: mInv.email,
                 legalName: mInv.name,
                 passwordHash: 'dummy-hash',
-                role: 'USER',
+                roleId: dbRole.id,
                 status: 'ACTIVE'
               }
             });

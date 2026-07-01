@@ -32,12 +32,18 @@ export class SocialService {
         const email = `${ml.username.toLowerCase()}@example.com`;
         let user = await this.prisma.user.findUnique({ where: { email } });
         if (!user) {
+          let dbRole = await this.prisma.role.findUnique({ where: { name: 'USER' } });
+          if (!dbRole) {
+            dbRole = await this.prisma.role.create({
+              data: { name: 'USER', description: 'USER system role' }
+            });
+          }
           user = await this.prisma.user.create({
             data: {
               email,
               legalName: ml.username,
               passwordHash: 'dummy-hash',
-              role: 'USER',
+              roleId: dbRole.id,
               status: 'ACTIVE'
             }
           });

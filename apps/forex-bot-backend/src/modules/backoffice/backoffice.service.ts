@@ -214,19 +214,31 @@ export class BackofficeService {
 
   // ─── USER & APP CONFIG MANAGEMENT ──────────────────────────────────────────
   async listUsers() {
-    return this.prisma.user.findMany({
+    const users = await this.prisma.user.findMany({
       select: {
         id: true,
         legalName: true,
         email: true,
-        role: true,
         roleId: true,
         status: true,
         kycStatus: true,
-        createdAt: true
+        createdAt: true,
+        customRole: {
+          select: { name: true }
+        }
       },
       orderBy: { createdAt: 'desc' }
     });
+    return users.map(u => ({
+      id: u.id,
+      legalName: u.legalName,
+      email: u.email,
+      roleId: u.roleId,
+      role: u.customRole?.name || 'USER',
+      status: u.status,
+      kycStatus: u.kycStatus,
+      createdAt: u.createdAt
+    }));
   }
 
   async updateUserStatus(userId: string, status: string) {
@@ -247,7 +259,6 @@ export class BackofficeService {
     return this.prisma.user.update({
       where: { id: userId },
       data: { 
-        role,
         roleId: dbRole.id
       }
     });
@@ -511,7 +522,7 @@ export class BackofficeService {
   async getAuthorizedMenusForUser(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      include: { customRole: true } as any
+      include: { customRole: true }
     });
 
     if (!user) throw new BadRequestException('Pengguna tidak ditemukan.');
@@ -522,7 +533,7 @@ export class BackofficeService {
     });
 
     // Jika SUPERADMIN, beri semua menu aktif tanpa filter
-    if (user.role === 'SUPERADMIN') {
+    if (user.customRole?.name === 'SUPERADMIN') {
       return allActiveMenus;
     }
 

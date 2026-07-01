@@ -1,4 +1,29 @@
-import { IsString, IsNumber, IsNotEmpty, IsOptional, Min } from 'class-validator';
+import { IsString, IsNumber, IsNotEmpty, IsOptional, Min, IsEnum } from 'class-validator';
+
+export enum PaymentMethod {
+  // QRIS Universal
+  QRIS = 'QRIS',
+  // E-Wallet via Midtrans
+  GOPAY = 'GOPAY',
+  SHOPEEPAY = 'SHOPEEPAY',
+  // E-Wallet via Xendit
+  DANA = 'DANA',
+  OVO = 'OVO',
+  LINKAJA = 'LINKAJA',
+  // Virtual Account via Midtrans
+  VA_BCA = 'VA_BCA',
+  VA_MANDIRI = 'VA_MANDIRI',
+  VA_BNI = 'VA_BNI',
+  VA_BRI = 'VA_BRI',
+  VA_CIMB = 'VA_CIMB',
+  VA_PERMATA = 'VA_PERMATA',
+  // Retail
+  ALFAMART = 'ALFAMART',
+  INDOMARET = 'INDOMARET',
+  // Manual & Crypto
+  BANK_TRANSFER = 'BANK_TRANSFER',
+  CRYPTO = 'CRYPTO',
+}
 
 export class DepositDto {
   @IsNumber()
@@ -9,9 +34,8 @@ export class DepositDto {
   @IsNotEmpty()
   currency!: string;
 
-  @IsString()
-  @IsNotEmpty()
-  method!: string;
+  @IsEnum(PaymentMethod)
+  method!: PaymentMethod;
 }
 
 export class WithdrawalDto {
@@ -23,9 +47,8 @@ export class WithdrawalDto {
   @IsNotEmpty()
   currency!: string;
 
-  @IsString()
-  @IsNotEmpty()
-  method!: string;
+  @IsEnum(PaymentMethod)
+  method!: PaymentMethod;
 
   @IsString()
   @IsOptional()
@@ -48,13 +71,18 @@ export class MidtransWebhookDto {
 
 export class XenditWebhookDto {
   @IsString()
-  @IsNotEmpty()
-  id!: string;
+  @IsOptional()
+  event?: string;
 
   @IsString()
-  @IsNotEmpty()
-  status!: string;
+  @IsOptional()
+  id?: string;
+
+  @IsString()
+  @IsOptional()
+  status?: string;
 
   @IsNumber()
-  amount!: number;
+  @IsOptional()
+  amount?: number;
 }

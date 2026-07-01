@@ -38,15 +38,28 @@ export class SupportService {
       throw new BadRequestException('Ticket not found or unauthorized.');
     }
 
-    return this.prisma.ticketMessage.findMany({
+    const messages = await this.prisma.ticketMessage.findMany({
       where: { ticketId },
       include: {
         sender: {
-          select: { legalName: true, role: true }
+          select: {
+            legalName: true,
+            customRole: {
+              select: { name: true }
+            }
+          }
         }
       },
       orderBy: { createdAt: 'asc' }
     });
+
+    return messages.map((m: any) => ({
+      ...m,
+      sender: {
+        legalName: m.sender?.legalName,
+        role: m.sender?.customRole?.name || 'USER'
+      }
+    }));
   }
 
   async sendTicketMessage(userId: string, ticketId: string, body: any) {

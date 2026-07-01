@@ -136,7 +136,10 @@ export class TradingEngineService {
       throw new BadRequestException('currencyPair, tradeType, lotSize, and entryPrice are required.');
     }
 
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { customRole: true }
+    });
     if (!user) throw new BadRequestException('User not found.');
 
     const mainTrade = await this.prisma.tradeRecord.create({
@@ -244,7 +247,7 @@ export class TradingEngineService {
     })).catch(err => console.error('Failed to publish telemetry:', err.message));
 
     // PAMM allocation for MANAGER role
-    if (user.role === 'MANAGER') {
+    if (user.customRole?.name === 'MANAGER') {
       const slaves = [
         { id: 'slave-1', name: 'Andi Wijaya', equity: 50000 },
         { id: 'slave-2', name: 'Siti Rahma', equity: 30000 },

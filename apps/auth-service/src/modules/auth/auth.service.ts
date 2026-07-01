@@ -23,6 +23,13 @@ export class AuthService implements OnModuleInit {
       const passwordHash = await hashPassword('Password123!');
       try {
         await this.prisma.$transaction(async (tx) => {
+          let dbRole = await tx.role.findUnique({ where: { name: 'SUPERADMIN' } });
+          if (!dbRole) {
+            dbRole = await tx.role.create({
+              data: { name: 'SUPERADMIN', description: 'SUPERADMIN system role' }
+            });
+          }
+
           const user = await tx.user.create({
             data: {
               email: adminEmail,
@@ -30,7 +37,7 @@ export class AuthService implements OnModuleInit {
               passwordHash,
               isVerified: true,
               kycStatus: 'APPROVED',
-              role: 'SUPERADMIN'
+              roleId: dbRole.id
             }
           });
 
@@ -111,6 +118,14 @@ export class AuthService implements OnModuleInit {
     const verificationToken = crypto.randomBytes(32).toString('hex');
     
     const result = await this.prisma.$transaction(async (tx) => {
+      const roleName = email.includes('admin') ? 'SUPERADMIN' : 'USER';
+      let dbRole = await tx.role.findUnique({ where: { name: roleName } });
+      if (!dbRole) {
+        dbRole = await tx.role.create({
+          data: { name: roleName, description: `${roleName} system role` }
+        });
+      }
+
       const user = await tx.user.create({
         data: {
           email,
@@ -119,7 +134,7 @@ export class AuthService implements OnModuleInit {
           isVerified: false,
           verificationToken,
           kycStatus: 'PENDING',
-          role: email.includes('admin') ? 'SUPERADMIN' : 'USER'
+          roleId: dbRole.id
         }
       });
 
@@ -188,7 +203,7 @@ export class AuthService implements OnModuleInit {
         isVerified: true,
         verificationToken: null
       },
-      include: { subscription: { include: { plan: true } } }
+      include: { subscription: { include: { plan: true } }, customRole: true }
     });
 
     // Kirim email notifikasi aktivasi berhasil
@@ -201,7 +216,7 @@ export class AuthService implements OnModuleInit {
     // Auto Login: Generate JWT & session
     const { privateKey } = getRsaKeys();
     const tier = updatedUser.subscription?.plan.tier || 'BASIC';
-    const payload = { sub: updatedUser.id, email: updatedUser.email, role: updatedUser.role, tier };
+    const payload = { sub: updatedUser.id, email: updatedUser.email, role: updatedUser.customRole?.name || 'USER', tier };
 
     const jwtToken = await this.jwtService.signAsync(payload, {
       privateKey,
@@ -252,7 +267,7 @@ export class AuthService implements OnModuleInit {
         id: updatedUser.id,
         email: updatedUser.email,
         legalName: updatedUser.legalName,
-        role: updatedUser.role,
+        role: updatedUser.customRole?.name || 'USER',
         tier,
         kycStatus: updatedUser.kycStatus,
         twoFactorOn: updatedUser.twoFactorOn
@@ -268,7 +283,7 @@ export class AuthService implements OnModuleInit {
 
     const user = await this.prisma.user.findUnique({ 
       where: { email },
-      include: { subscription: { include: { plan: true } } }
+      include: { subscription: { include: { plan: true } }, customRole: true }
     });
 
     const attemptData = {
@@ -330,7 +345,7 @@ export class AuthService implements OnModuleInit {
 
     const { privateKey } = getRsaKeys();
     const tier = user.subscription?.plan.tier || 'BASIC';
-    const payload = { sub: user.id, email: user.email, role: user.role, tier };
+    const payload = { sub: user.id, email: user.email, role: user.customRole?.name || 'USER', tier };
 
     const token = await this.jwtService.signAsync(payload, {
       privateKey,
@@ -374,7 +389,7 @@ export class AuthService implements OnModuleInit {
         id: user.id,
         email: user.email,
         legalName: user.legalName,
-        role: user.role,
+        role: user.customRole?.name || 'USER',
         tier,
         kycStatus: user.kycStatus,
         twoFactorOn: user.twoFactorOn
@@ -389,7 +404,7 @@ export class AuthService implements OnModuleInit {
 
     const user = await this.prisma.user.findUnique({
       where: { email },
-      include: { subscription: { include: { plan: true } } }
+      include: { subscription: { include: { plan: true } }, customRole: true }
     });
 
     if (!user) {
@@ -402,7 +417,7 @@ export class AuthService implements OnModuleInit {
 
     const { privateKey } = getRsaKeys();
     const tier = user.subscription?.plan.tier || 'BASIC';
-    const payload = { sub: user.id, email: user.email, role: user.role, tier };
+    const payload = { sub: user.id, email: user.email, role: user.customRole?.name || 'USER', tier };
 
     const token = await this.jwtService.signAsync(payload, {
       privateKey,
@@ -453,7 +468,7 @@ export class AuthService implements OnModuleInit {
         id: user.id,
         email: user.email,
         legalName: user.legalName,
-        role: user.role,
+        role: user.customRole?.name || 'USER',
         tier,
         kycStatus: user.kycStatus,
         twoFactorOn: user.twoFactorOn
@@ -469,7 +484,7 @@ export class AuthService implements OnModuleInit {
 
     const user = await this.prisma.user.findUnique({
       where: { email },
-      include: { subscription: { include: { plan: true } } }
+      include: { subscription: { include: { plan: true } }, customRole: true }
     });
 
     if (!user || !user.otpCode || !user.otpExpiresAt) {
@@ -492,7 +507,7 @@ export class AuthService implements OnModuleInit {
 
     const { privateKey } = getRsaKeys();
     const tier = user.subscription?.plan.tier || 'BASIC';
-    const payload = { sub: user.id, email: user.email, role: user.role, tier };
+    const payload = { sub: user.id, email: user.email, role: user.customRole?.name || 'USER', tier };
 
     const token = await this.jwtService.signAsync(payload, {
       privateKey,
@@ -543,7 +558,7 @@ export class AuthService implements OnModuleInit {
         id: user.id,
         email: user.email,
         legalName: user.legalName,
-        role: user.role,
+        role: user.customRole?.name || 'USER',
         tier,
         kycStatus: user.kycStatus,
         twoFactorOn: user.twoFactorOn
@@ -644,7 +659,7 @@ export class AuthService implements OnModuleInit {
 
     let user = await this.prisma.user.findUnique({
       where: { email: verifiedEmail },
-      include: { subscription: { include: { plan: true } } }
+      include: { subscription: { include: { plan: true } }, customRole: true }
     });
 
     if (!user) {
@@ -653,6 +668,13 @@ export class AuthService implements OnModuleInit {
       const passwordHash = await hashPassword(dummyPassword);
 
       const createdUser = await this.prisma.$transaction(async (tx) => {
+        let dbRole = await tx.role.findUnique({ where: { name: 'USER' } });
+        if (!dbRole) {
+          dbRole = await tx.role.create({
+            data: { name: 'USER', description: 'USER system role' }
+          });
+        }
+
         const newUser = await tx.user.create({
           data: {
             email: verifiedEmail,
@@ -660,7 +682,7 @@ export class AuthService implements OnModuleInit {
             passwordHash,
             isVerified: true, // Login via Google otomatis terverifikasi
             kycStatus: 'PENDING',
-            role: 'USER'
+            roleId: dbRole.id
           }
         });
 
@@ -702,14 +724,14 @@ export class AuthService implements OnModuleInit {
       // Muat ulang relasi setelah transaksi
       user = await this.prisma.user.findUnique({
         where: { id: createdUser.id },
-        include: { subscription: { include: { plan: true } } }
+        include: { subscription: { include: { plan: true } }, customRole: true }
       });
     } else if (!user.isVerified) {
       // Jika pengguna sudah ada tapi belum terverifikasi secara lokal, verifikasi otomatis melalui Google OAuth
       user = await this.prisma.user.update({
         where: { id: user.id },
         data: { isVerified: true },
-        include: { subscription: { include: { plan: true } } }
+        include: { subscription: { include: { plan: true } }, customRole: true }
       });
     }
 
@@ -719,7 +741,7 @@ export class AuthService implements OnModuleInit {
 
     const { privateKey } = getRsaKeys();
     const tier = user.subscription?.plan.tier || 'BASIC';
-    const payload = { sub: user.id, email: user.email, role: user.role, tier };
+    const payload = { sub: user.id, email: user.email, role: user.customRole?.name || 'USER', tier };
 
     const token = await this.jwtService.signAsync(payload, {
       privateKey,
@@ -770,7 +792,7 @@ export class AuthService implements OnModuleInit {
         id: user.id,
         email: user.email,
         legalName: user.legalName,
-        role: user.role,
+        role: user.customRole?.name || 'USER',
         tier,
         kycStatus: user.kycStatus,
         twoFactorOn: user.twoFactorOn
@@ -797,7 +819,7 @@ export class AuthService implements OnModuleInit {
   async getProfile(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      include: { subscription: { include: { plan: true } }, botConfigs: true }
+      include: { subscription: { include: { plan: true } }, botConfigs: true, customRole: true }
     });
 
     if (!user) throw new BadRequestException('User not found.');
@@ -808,7 +830,7 @@ export class AuthService implements OnModuleInit {
       legalName: user.legalName,
       phone: user.phone,
       country: user.country,
-      role: user.role,
+      role: user.customRole?.name || 'USER',
       kycStatus: user.kycStatus,
       twoFactorOn: user.twoFactorOn,
       subscription: user.subscription,
@@ -831,7 +853,8 @@ export class AuthService implements OnModuleInit {
 
     const updatedUser = await this.prisma.user.update({
       where: { id: userId },
-      data: updateData
+      data: updateData,
+      include: { customRole: true }
     });
 
     return {
@@ -840,7 +863,7 @@ export class AuthService implements OnModuleInit {
       legalName: updatedUser.legalName,
       phone: updatedUser.phone,
       country: updatedUser.country,
-      role: updatedUser.role,
+      role: updatedUser.customRole?.name || 'USER',
       kycStatus: updatedUser.kycStatus,
       twoFactorOn: updatedUser.twoFactorOn
     };

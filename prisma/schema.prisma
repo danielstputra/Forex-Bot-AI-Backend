@@ -63,7 +63,6 @@ model User {
   phone           String?
   country         String?
   currency        String         @default("USD")
-  role            String         @default("USER")    // USER, MANAGER (PAMM), ADMIN, SUPERADMIN
   status          UserStatus     @default(ACTIVE)
   
   // Keamanan & KYC (Fase 11)
