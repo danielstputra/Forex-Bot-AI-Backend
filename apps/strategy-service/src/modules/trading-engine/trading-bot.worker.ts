@@ -18,6 +18,8 @@ export class TradingBotWorker implements OnModuleInit, OnModuleDestroy {
   private activeBotsCache: any[] = [];
   private lastCacheTime = 0;
 
+  private syncInterval: any;
+
   constructor(
     private prisma: PrismaService,
     private tradingEngineService: TradingEngineService,
@@ -46,10 +48,22 @@ export class TradingBotWorker implements OnModuleInit, OnModuleDestroy {
         }
       }
     });
+
+    // Section Position Synchronization (Runs every 5 seconds)
+    this.syncInterval = setInterval(async () => {
+      try {
+        await this.syncPositionsAndReconcile();
+      } catch (err: any) {
+        console.error('[TradingBotWorker] Position Sync Error:', err.message);
+      }
+    }, 5000);
   }
 
   onModuleDestroy() {
     this.redisSub.disconnect();
+    if (this.syncInterval) {
+      clearInterval(this.syncInterval);
+    }
   }
 
   private async getActiveBots() {
@@ -1048,5 +1062,82 @@ export class TradingBotWorker implements OnModuleInit, OnModuleDestroy {
     const mean = prices.reduce((sum, p) => sum + p, 0) / prices.length;
     const variance = prices.reduce((sum, p) => sum + Math.pow(p - mean, 2), 0) / prices.length;
     return Math.sqrt(variance);
+  }
+
+  private async syncPositionsAndReconcile() {
+    try {
+      const openTrades = await this.prisma.tradeRecord.findMany({
+        where: { status: 'OPEN' }
+      });
+      
+      for (const trade of openTrades) {
+        // Fetch current price from history
+        const currentPrice = this.priceHistory[trade.currencyPair]?.slice(-1)[0]?.close || trade.entryPrice;
+        
+        // Fetch the active bot config
+        const config = await this.prisma.botConfig.findFirst({
+          where: { userId: trade.userId, isActive: true }
+        });
+        
+        const sl = config?.stopLossPips || 30;
+        const tp = config?.takeProfitPips || 50;
+        
+        const pipsDiff = trade.tradeType === 'BUY'
+          ? currentPrice - trade.entryPrice
+          : trade.entryPrice - currentPrice;
+        const multiplier = trade.currencyPair === 'USD/JPY' ? 100 : 10000;
+        const pips = pipsDiff * multiplier;
+
+        let shouldClose = false;
+        let reason = 'SYNC_RECONCILIATION';
+
+        if (pips <= -sl) {
+          shouldClose = true;
+          reason = 'SL_HIT';
+        } else if (pips >= tp) {
+          shouldClose = true;
+          reason = 'TP_HIT';
+        }
+
+        if (shouldClose) {
+          console.log(`[TradingBotWorker] Position Sync: Closing trade ${trade.id} for pair ${trade.currencyPair} due to ${reason}.`);
+          
+          const pipValueMultiplier = trade.currencyPair === 'USD/JPY' ? 1000 : 100000;
+          const profitAmount = parseFloat((pipsDiff * trade.lotSize * pipValueMultiplier).toFixed(2));
+
+          await this.prisma.$transaction(async (tx) => {
+            await tx.tradeRecord.update({
+              where: { id: trade.id },
+              data: {
+                closePrice: currentPrice,
+                closedAt: new Date(),
+                profitAmount,
+                status: 'CLOSED'
+              }
+            });
+
+            await tx.orderExecutionLog.create({
+              data: {
+                tradeRecordId: trade.id,
+                actionType: 'ORDER_CLOSED',
+                rawPayload: JSON.stringify({ closePrice: currentPrice, profitAmount, closedAt: new Date(), reason })
+              }
+            });
+
+            const userWallet = await tx.userWallet.findFirst({ where: { userId: trade.userId, currency: 'USD' } });
+            if (userWallet) {
+              await tx.userWallet.update({
+                where: { id: userWallet.id },
+                data: {
+                  balance: parseFloat((userWallet.balance + profitAmount).toFixed(2))
+                }
+              });
+            }
+          });
+        }
+      }
+    } catch (err: any) {
+      console.error('[TradingBotWorker] Error in syncPositionsAndReconcile:', err.message);
+    }
   }
 }
