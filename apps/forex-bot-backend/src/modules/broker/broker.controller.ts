@@ -27,4 +27,9 @@ export class BrokerController {
   async getSyncLogs(@Request() req: any, @Param('accountId') accountId: string) {
     return this.brokerService.getSyncLogs(req.user.sub, accountId);
   }
+
+  @Delete(':accountId')
+  async disconnectAccount(@Request() req: any, @Param('accountId') accountId: string) {
+    return this.brokerService.disconnectAccount(req.user.sub, accountId);
+  }
 }

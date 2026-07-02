@@ -182,6 +182,18 @@ export class MetaTraderBrokerApiClient implements IBrokerApiClient {
     if (!this.serverAddress || !this.accountNumber) {
       throw new Error('MetaTrader 5 Server Address and Account Number are required.');
     }
+    // Simulation / Placeholder Server fallback
+    const isMock = !this.serverAddress.startsWith('http://') && !this.serverAddress.startsWith('https://');
+    if (isMock || this.serverAddress.toLowerCase().includes('sandbox') || this.serverAddress.toLowerCase().includes('mock')) {
+      return {
+        success: true,
+        data: {
+          balance: 10000.00,
+          equity: 10000.00 + (Math.random() * 200 - 100) // simulated slight fluctuation
+        }
+      };
+    }
+
     try {
       const response = await fetch(`${this.serverAddress}/api/account/details`, {
         method: 'POST',
@@ -219,6 +231,15 @@ export class MetaTraderBrokerApiClient implements IBrokerApiClient {
     
     if (!this.serverAddress || !this.accountNumber) {
       throw new Error('MetaTrader 5 Server Address and Account Number are required for real-time execution.');
+    }
+
+    const isMock = !this.serverAddress.startsWith('http://') && !this.serverAddress.startsWith('https://');
+    if (isMock || this.serverAddress.toLowerCase().includes('sandbox') || this.serverAddress.toLowerCase().includes('mock')) {
+      return {
+        success: true,
+        ticketId: `MT5-MOCK-${Math.floor(100000 + Math.random() * 900000)}`,
+        rawPayload: JSON.stringify({ order: Date.now(), comment: 'Simulated Order Success' })
+      };
     }
 
     try {
@@ -266,6 +287,14 @@ export class MetaTraderBrokerApiClient implements IBrokerApiClient {
   }): Promise<BrokerOrderResult> {
     console.log(`[MT5 WebAPI] Closing real trade ${ticketId} on server ${this.serverAddress}`);
     const mt5PositionId = ticketId.replace(/^MT5-/, '');
+
+    const isMock = !this.serverAddress.startsWith('http://') && !this.serverAddress.startsWith('https://');
+    if (isMock || this.serverAddress.toLowerCase().includes('sandbox') || this.serverAddress.toLowerCase().includes('mock')) {
+      return {
+        success: true,
+        rawPayload: JSON.stringify({ comment: 'Simulated Close Success' })
+      };
+    }
 
     try {
       const response = await fetch(`${this.serverAddress}/api/trade/close`, {

@@ -114,4 +114,17 @@ export class BrokerService {
       }
     });
   }
+
+  async disconnectAccount(userId: string, accountId: string) {
+    const account = await this.prisma.brokerAccount.findFirst({
+      where: { id: accountId, userId }
+    });
+    if (!account) throw new BadRequestException('Broker account not found.');
+
+    await this.prisma.brokerAccount.delete({
+      where: { id: accountId }
+    });
+
+    return { success: true, message: 'Broker account disconnected successfully.' };
+  }
 }
