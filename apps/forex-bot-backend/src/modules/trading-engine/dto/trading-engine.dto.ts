@@ -24,6 +24,24 @@ export class UpdateConfigDto {
   @IsNumber()
   @IsOptional()
   takeProfit?: number;
+
+  @IsNumber()
+  @IsOptional()
+  riskTolerance?: number;
+
+  @IsNumber()
+  @IsOptional()
+  lotMultiplier?: number;
+
+  @IsNumber()
+  @IsOptional()
+  maxDrawdown?: number;
+
+  @IsOptional()
+  newsFilterOn?: boolean;
+
+  @IsOptional()
+  useSentiment?: boolean;
 }
 
 export class ExecuteOrderDto {

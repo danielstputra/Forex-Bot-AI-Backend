@@ -7,11 +7,115 @@ export class UpdateAppConfigDto {
 
   @IsString()
   @IsOptional()
+  appDescription?: string;
+
+  @IsString()
+  @IsOptional()
+  backendUrl?: string;
+
+  @IsString()
+  @IsOptional()
+  logoUrl?: string;
+
+  @IsString()
+  @IsOptional()
+  appVersion?: string;
+
+  @IsString()
+  @IsOptional()
+  appUrl?: string;
+
+  @IsString()
+  @IsOptional()
+  appKey?: string;
+
+  @IsString()
+  @IsOptional()
   supportEmail?: string;
+
+  @IsString()
+  @IsOptional()
+  supportTelegram?: string;
+
+  @IsString()
+  @IsOptional()
+  defaultLanguage?: string;
 
   @IsBoolean()
   @IsOptional()
   maintenanceMode?: boolean;
+
+  @IsNumber()
+  @IsOptional()
+  globalMinDeposit?: number;
+
+  @IsNumber()
+  @IsOptional()
+  globalCommissionPct?: number;
+
+  @IsArray()
+  @IsOptional()
+  activeMenus?: string[];
+
+  @IsBoolean()
+  @IsOptional()
+  loginOtpEnabled?: boolean;
+
+  @IsBoolean()
+  @IsOptional()
+  smtpEnabled?: boolean;
+
+  @IsBoolean()
+  @IsOptional()
+  oauthEnabled?: boolean;
+
+  @IsString()
+  @IsOptional()
+  smtpHost?: string;
+
+  @IsNumber()
+  @IsOptional()
+  smtpPort?: number;
+
+  @IsString()
+  @IsOptional()
+  smtpUser?: string;
+
+  @IsString()
+  @IsOptional()
+  smtpPass?: string;
+
+  @IsString()
+  @IsOptional()
+  smtpSender?: string;
+
+  @IsString()
+  @IsOptional()
+  googleClientId?: string;
+
+  @IsString()
+  @IsOptional()
+  activePaymentGateway?: string;
+
+  @IsString()
+  @IsOptional()
+  midtransServerKey?: string;
+
+  @IsString()
+  @IsOptional()
+  xenditApiKey?: string;
+
+  @IsString()
+  @IsOptional()
+  bankName?: string;
+
+  @IsString()
+  @IsOptional()
+  bankAccountNumber?: string;
+
+  @IsString()
+  @IsOptional()
+  bankRecipientName?: string;
 }
 
 export class CreateSystemMenuDto {
