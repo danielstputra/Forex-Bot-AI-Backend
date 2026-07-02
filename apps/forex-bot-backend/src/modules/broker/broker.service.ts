@@ -8,22 +8,24 @@ export class BrokerService {
   constructor(private prisma: PrismaService) {}
 
   async linkAccount(userId: string, body: any) {
-    const { brokerName, accountNumber, password, serverAddress, leverage } = body;
-    if (!brokerName || !accountNumber || !password || !serverAddress) {
+    const { brokerName, accountNumber, password, passwordCipher, serverAddress, leverage } = body;
+    const finalPassword = password || passwordCipher;
+
+    if (!brokerName || !accountNumber || !finalPassword || !serverAddress) {
       throw new BadRequestException('brokerName, accountNumber, password, and serverAddress are required.');
     }
 
     const existing = await this.prisma.brokerAccount.findUnique({ where: { accountNumber } });
     if (existing) throw new BadRequestException('Broker account number is already linked.');
 
-    const passwordCipher = encrypt(password);
+    const encryptedPassword = encrypt(finalPassword);
 
     const account = await this.prisma.brokerAccount.create({
       data: {
         userId,
         brokerName,
         accountNumber,
-        passwordCipher,
+        passwordCipher: encryptedPassword,
         serverAddress,
         leverage: leverage ? parseInt(leverage) : 500,
         balance: 10000.00,

@@ -162,7 +162,8 @@ async function main() {
     { key: 'audit', name: 'Audit Trail', path: 'audit', iconName: 'Shield', order: 11, isActive: true },
     { key: 'developer', name: 'Developer Portal', path: 'developer', iconName: 'Code', order: 12, isActive: true },
     { key: 'backoffice', name: 'Backoffice (Admin)', path: 'backoffice', iconName: 'Settings', order: 13, isActive: true },
-    { key: 'logs', name: 'System Logs', path: 'logs', iconName: 'Terminal', order: 14, isActive: true }
+    { key: 'logs', name: 'System Logs', path: 'logs', iconName: 'Terminal', order: 14, isActive: true },
+    { key: 'simulation', name: 'Sandbox Simulasi', path: 'simulation', iconName: 'FlaskConical', order: 15, isActive: true }
   ];
 
   const menuMap = {};

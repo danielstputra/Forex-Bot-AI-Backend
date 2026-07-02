@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsOptional } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsNumber } from 'class-validator';
 
 export class LinkBrokerDto {
   @IsString()
@@ -6,8 +6,8 @@ export class LinkBrokerDto {
   brokerName!: string;
 
   @IsString()
-  @IsNotEmpty()
-  accountId!: string;
+  @IsOptional()
+  accountId?: string;
 
   @IsString()
   @IsOptional()
@@ -16,4 +16,24 @@ export class LinkBrokerDto {
   @IsString()
   @IsOptional()
   apiSecret?: string;
+
+  @IsString()
+  @IsOptional()
+  accountNumber?: string;
+
+  @IsString()
+  @IsOptional()
+  password?: string;
+
+  @IsString()
+  @IsOptional()
+  passwordCipher?: string;
+
+  @IsString()
+  @IsOptional()
+  serverAddress?: string;
+
+  @IsNumber()
+  @IsOptional()
+  leverage?: number;
 }
