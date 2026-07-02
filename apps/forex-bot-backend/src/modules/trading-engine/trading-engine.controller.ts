@@ -13,6 +13,11 @@ export class TradingEngineController {
     return this.tradingEngineService.startBot(req.user.sub);
   }
 
+  @Post('bot/pause')
+  async pauseBot(@Request() req: any) {
+    return this.tradingEngineService.pauseBot(req.user.sub);
+  }
+
   @Post('bot/stop')
   async stopBot(@Request() req: any) {
     return this.tradingEngineService.stopBot(req.user.sub);

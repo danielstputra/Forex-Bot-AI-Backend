@@ -6,9 +6,24 @@ import * as crypto from 'crypto';
 export class TradingEngineService {
   constructor(private prisma: PrismaService) {}
 
+  private async getOrCreateBotConfig(userId: string) {
+    let config = await this.prisma.botConfig.findFirst({ where: { userId } });
+    if (!config) {
+      config = await this.prisma.botConfig.create({
+        data: {
+          userId,
+          strategyName: 'Default AI Strategy',
+          riskTolerance: 2.0,
+          lotMultiplier: 1.0,
+          maxDrawdown: 20.0
+        }
+      });
+    }
+    return config;
+  }
+
   async startBot(userId: string) {
-    const config = await this.prisma.botConfig.findFirst({ where: { userId } });
-    if (!config) throw new BadRequestException('Bot configuration not found.');
+    const config = await this.getOrCreateBotConfig(userId);
 
     await this.prisma.auditLog.create({
       data: { userId, action: 'START_BOT', ipAddress: '127.0.0.1', details: `Strategy: ${config.strategyName}`, status: 'SUCCESS' }
@@ -21,8 +36,7 @@ export class TradingEngineService {
   }
 
   async stopBot(userId: string) {
-    const config = await this.prisma.botConfig.findFirst({ where: { userId } });
-    if (!config) throw new BadRequestException('Bot configuration not found.');
+    const config = await this.getOrCreateBotConfig(userId);
 
     return this.prisma.$transaction(async (tx) => {
       await tx.botConfig.update({ where: { id: config.id }, data: { isActive: false } });
@@ -76,9 +90,30 @@ export class TradingEngineService {
     });
   }
 
+  async pauseBot(userId: string) {
+    const config = await this.getOrCreateBotConfig(userId);
+
+    // PAUSE: Hentikan eksekusi baru, tapi JANGAN tutup posisi aktif yang berjalan
+    await this.prisma.botConfig.update({
+      where: { id: config.id },
+      data: { isActive: false }
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        userId,
+        action: 'PAUSE_BOT',
+        ipAddress: '127.0.0.1',
+        details: 'Bot dijeda — posisi aktif tetap terbuka',
+        status: 'SUCCESS'
+      }
+    });
+
+    return { status: 'paused', message: 'Bot dijeda. Posisi aktif tetap terbuka.' };
+  }
+
   async updateConfig(userId: string, body: any) {
-    const config = await this.prisma.botConfig.findFirst({ where: { userId } });
-    if (!config) throw new BadRequestException('Bot configuration not found.');
+    const config = await this.getOrCreateBotConfig(userId);
 
     const { riskTolerance, lotMultiplier, maxDrawdown, newsFilterOn, useSentiment } = body;
 
@@ -151,8 +186,7 @@ export class TradingEngineService {
   async generateLicense(userId: string, body: any) {
     const { ipBound, validDays } = body;
 
-    const config = await this.prisma.botConfig.findFirst({ where: { userId } });
-    if (!config) throw new BadRequestException('Bot configuration not found.');
+    const config = await this.getOrCreateBotConfig(userId);
 
     const rawKey = crypto.randomBytes(32).toString('hex');
     const licenseKeyHash = crypto.createHash('sha256').update(rawKey).digest('hex');
@@ -177,8 +211,7 @@ export class TradingEngineService {
   }
 
   async getLicenses(userId: string) {
-    const config = await this.prisma.botConfig.findFirst({ where: { userId } });
-    if (!config) return [];
+    const config = await this.getOrCreateBotConfig(userId);
 
     return this.prisma.strategyLicense.findMany({
       where: { botConfigId: config.id },
@@ -187,8 +220,7 @@ export class TradingEngineService {
   }
 
   async revokeLicense(userId: string, licenseId: string) {
-    const config = await this.prisma.botConfig.findFirst({ where: { userId } });
-    if (!config) throw new BadRequestException('Bot configuration not found.');
+    const config = await this.getOrCreateBotConfig(userId);
 
     return this.prisma.strategyLicense.updateMany({
       where: { id: licenseId, botConfigId: config.id },
@@ -197,8 +229,7 @@ export class TradingEngineService {
   }
 
   async purgeLicense(userId: string, licenseId: string) {
-    const config = await this.prisma.botConfig.findFirst({ where: { userId } });
-    if (!config) throw new BadRequestException('Bot configuration not found.');
+    const config = await this.getOrCreateBotConfig(userId);
 
     return this.prisma.strategyLicense.deleteMany({
       where: { id: licenseId, botConfigId: config.id }

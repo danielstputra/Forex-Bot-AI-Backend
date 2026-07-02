@@ -738,6 +738,19 @@ export class AuthService {
 
     if (!user) throw new BadRequestException('User not found.');
 
+    let botConfig = user.botConfigs[0] || null;
+    if (!botConfig) {
+      botConfig = await this.prisma.botConfig.create({
+        data: {
+          userId: user.id,
+          strategyName: 'Default AI Strategy',
+          riskTolerance: 2.0,
+          lotMultiplier: 1.0,
+          maxDrawdown: 20.0
+        }
+      });
+    }
+
     return {
       id: user.id,
       email: user.email,
@@ -749,7 +762,7 @@ export class AuthService {
       twoFactorOn: user.twoFactorOn,
       subscription: user.subscription,
       tier: user.subscription?.plan.tier || 'BASIC',
-      botConfig: user.botConfigs[0] || null
+      botConfig
     };
   }
 
